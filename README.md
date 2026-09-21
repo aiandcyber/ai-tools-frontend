@@ -44,7 +44,7 @@ Connect [ai-tools-frontend](https://github.com/aiandcyber/ai-tools-frontend) in 
 | `VITE_AUTH0_AUDIENCE` | (optional) |
 | `VITE_AUTH_REQUIRED` | `false` until login is enforced |
 
-`public/_redirects` sends all routes to `index.html` for the SPA.
+`wrangler.jsonc` sets `assets.not_found_handling` to `single-page-application`, so unknown paths serve `index.html`. Do not add a `/* /index.html 200` rule in `_redirects`; Workers rejects it as a loop.
 
 ## First push to GitHub (run yourself)
 
