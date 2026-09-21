@@ -1,0 +1,105 @@
+export type Lang = 'en' | 'zh' | 'ta' | 'hi' | 'ml' | 'kn' | 'te'
+
+export const LANGS: { id: Lang; label: string; speech: string }[] = [
+  { id: 'en', label: 'English', speech: 'en-US' },
+  { id: 'zh', label: '中文', speech: 'zh-CN' },
+  { id: 'ta', label: 'தமிழ்', speech: 'ta-IN' },
+  { id: 'hi', label: 'हिन्दी', speech: 'hi-IN' },
+  { id: 'ml', label: 'മലയാളം', speech: 'ml-IN' },
+  { id: 'kn', label: 'ಕನ್ನಡ', speech: 'kn-IN' },
+  { id: 'te', label: 'తెలుగు', speech: 'te-IN' },
+]
+
+const text: Record<Lang, Record<string, string>> = {
+  en: {
+    brand: 'Tools', portal: 'AI-for All', headline: 'Free AI Tools For All',
+    search: 'Search tools', assistant: 'I am Your AI Assistant',
+    placeholder: 'Ask me to run a tool…', send: 'Send', signIn: 'Sign in', signOut: 'Sign out',
+    run: 'Run', working: 'Working…', upload: 'Files', language: 'Language', speak: 'Speak replies',
+    result: 'Result', empty: 'Choose a tool.', files: 'No file selected', voice: 'Voice',
+    searchCat: 'Search a Person or Topic',
+    searchAction: 'Search',
+    searchPlaceholder: 'Search a person or topic…',
+    searchSubtitle: 'People, topics, news and social — regional results first',
+    searchMode: 'Mode',
+    searchRegion: 'Region priority',
+    modeAuto: 'Auto',
+    modePerson: 'Person',
+    modeTopic: 'Topic',
+    pdf: 'Documents / PDF', office: 'Office', image: 'Images', media: 'Audio / video', utility: 'Utilities', ai: 'AI',
+  },
+  zh: {
+    brand: '工具', portal: 'AI-for All', headline: 'Free AI Tools For All',
+    search: '搜索工具', assistant: '我是您的 AI 助手',
+    placeholder: '请助手运行一个工具…', send: '发送', signIn: '登录', signOut: '退出',
+    run: '运行', working: '处理中…', upload: '文件', language: '语言', speak: '朗读回复',
+    result: '结果', empty: '请选择一个工具。', files: '未选择文件', voice: '语音',
+    searchCat: '搜索人或主题',
+    searchAction: '搜索',
+    searchPlaceholder: '搜索人或主题…',
+    pdf: '文档 / PDF', office: '办公', image: '图片', media: '音频 / 视频', utility: '实用工具', ai: '人工智能',
+  },
+  ta: {
+    brand: 'கருவிகள்', portal: 'AI-for All', headline: 'Free AI Tools For All',
+    search: 'கருவிகளைத் தேடு', assistant: 'நான் உங்கள் AI உதவியாளர்',
+    placeholder: 'ஒரு கருவியை இயக்கச் சொல்லுங்கள்…', send: 'அனுப்பு', signIn: 'உள்நுழை', signOut: 'வெளியேறு',
+    run: 'இயக்கு', working: 'செயலாகிறது…', upload: 'கோப்புகள்', language: 'மொழி', speak: 'பதிலைப் பேசு',
+    result: 'முடிவு', empty: 'ஒரு கருவியைத் தேர்ந்தெடுக்கவும்.', files: 'கோப்பு இல்லை', voice: 'குரல்',
+    searchCat: 'நபர் அல்லது தலைப்பைத் தேடுங்கள்',
+    searchAction: 'தேடு',
+    searchPlaceholder: 'நபர் அல்லது தலைப்பைத் தேடுங்கள்…',
+    pdf: 'ஆவணங்கள் / PDF', office: 'அலுவலகம்', image: 'படங்கள்', media: 'ஒலி / காணொலி', utility: 'பயன்கள்', ai: 'AI',
+  },
+  hi: {
+    brand: 'उपकरण', portal: 'AI-for All', headline: 'Free AI Tools For All',
+    search: 'उपकरण खोजें', assistant: 'मैं आपका AI सहायक हूँ',
+    placeholder: 'सहायक से उपकरण चलवाने को कहें…', send: 'भेजें', signIn: 'साइन इन', signOut: 'साइन आउट',
+    run: 'चलाएँ', working: 'काम हो रहा है…', upload: 'फ़ाइलें', language: 'भाषा', speak: 'उत्तर बोलें',
+    result: 'परिणाम', empty: 'एक उपकरण चुनें।', files: 'कोई फ़ाइल नहीं', voice: 'आवाज़',
+    searchCat: 'व्यक्ति या विषय खोजें',
+    searchAction: 'खोजें',
+    searchPlaceholder: 'व्यक्ति या विषय खोजें…',
+    pdf: 'दस्तावेज़ / PDF', office: 'ऑफिस', image: 'चित्र', media: 'ऑडियो / वीडियो', utility: 'उपयोगिताएँ', ai: 'AI',
+  },
+  ml: {
+    brand: 'ഉപകരണങ്ങൾ', portal: 'AI-for All', headline: 'Free AI Tools For All',
+    search: 'ഉപകരണം തിരയുക', assistant: 'ഞാൻ നിങ്ങളുടെ AI സഹായിയാണ്',
+    placeholder: 'ഒരു ഉപകരണം പ്രവർത്തിപ്പിക്കാൻ പറയുക…', send: 'അയയ്ക്കുക', signIn: 'പ്രവേശിക്കുക', signOut: 'പുറത്തുകടക്കുക',
+    run: 'പ്രവർത്തിപ്പിക്കുക', working: 'ചെയ്യുന്നു…', upload: 'ഫയലുകൾ', language: 'ഭാഷ', speak: 'മറുപടി പറയുക',
+    result: 'ഫലം', empty: 'ഒരു ഉപകരണം തിരഞ്ഞെടുക്കുക.', files: 'ഫയൽ ഇല്ല', voice: 'ശബ്ദം',
+    searchCat: 'വ്യക്തിയെയോ വിഷയത്തെയോ തിരയുക',
+    searchAction: 'തിരയുക',
+    searchPlaceholder: 'വ്യക്തിയെയോ വിഷയത്തെയോ തിരയുക…',
+    pdf: 'രേഖകൾ / PDF', office: 'ഓഫീസ്', image: 'ചിത്രങ്ങൾ', media: 'ശബ്ദം / വീഡിയോ', utility: 'യൂട്ടിലിറ്റി', ai: 'AI',
+  },
+  kn: {
+    brand: 'ಉಪಕರಣಗಳು', portal: 'AI-for All', headline: 'Free AI Tools For All',
+    search: 'ಉಪಕರಣ ಹುಡುಕಿ', assistant: 'ನಾನು ನಿಮ್ಮ AI ಸಹಾಯಕ',
+    placeholder: 'ಉಪಕರಣ ಚಲಾಯಿಸಲು ಸಹಾಯಕನಿಗೆ ಹೇಳಿ…', send: 'ಕಳುಹಿಸಿ', signIn: 'ಸೈನ್ ಇನ್', signOut: 'ಸೈನ್ ಔಟ್',
+    run: 'ಚಲಾಯಿಸಿ', working: 'ನಡೆಯುತ್ತಿದೆ…', upload: 'ಫೈಲ್‌ಗಳು', language: 'ಭಾಷೆ', speak: 'ಉತ್ತರವನ್ನು ಮಾತನಾಡಿ',
+    result: 'ಫಲಿತಾಂಶ', empty: 'ಒಂದು ಉಪಕರಣವನ್ನು ಆಯ್ಕೆಮಾಡಿ.', files: 'ಫೈಲ್ ಇಲ್ಲ', voice: 'ಧ್ವನಿ',
+    searchCat: 'ವ್ಯಕ್ತಿ ಅಥವಾ ವಿಷಯವನ್ನು ಹುಡುಕಿ',
+    searchAction: 'ಹುಡುಕಿ',
+    searchPlaceholder: 'ವ್ಯಕ್ತಿ ಅಥವಾ ವಿಷಯವನ್ನು ಹುಡುಕಿ…',
+    pdf: 'ದಾಖಲೆಗಳು / PDF', office: 'ಕಚೇರಿ', image: 'ಚಿತ್ರಗಳು', media: 'ಆಡಿಯೋ / ವೀಡಿಯೊ', utility: 'ಉಪಯುಕ್ತತೆಗಳು', ai: 'AI',
+  },
+  te: {
+    brand: 'పరికరాలు', portal: 'AI-for All', headline: 'Free AI Tools For All',
+    search: 'పరికరాలను వెతకండి', assistant: 'నేను మీ AI సహాయకుడిని',
+    placeholder: 'ఒక పరికరాన్ని నడపమని చెప్పండి…', send: 'పంపండి', signIn: 'సైన్ ఇన్', signOut: 'సైన్ అవుట్',
+    run: 'నడపండి', working: 'జరుగుతోంది…', upload: 'ఫైళ్లు', language: 'భాష', speak: 'సమాధానం చెప్పండి',
+    result: 'ఫలితం', empty: 'ఒక పరికరాన్ని ఎంచుకోండి.', files: 'ఫైల్ లేదు', voice: 'వాయిస్',
+    searchCat: 'వ్యక్తి లేదా అంశాన్ని శోధించండి',
+    searchAction: 'శోధించండి',
+    searchPlaceholder: 'వ్యక్తి లేదా అంశాన్ని శోధించండి…',
+    pdf: 'పత్రాలు / PDF', office: 'ఆఫీస్', image: 'చిత్రాలు', media: 'ఆడియో / వీడియో', utility: 'యుటిలిటీలు', ai: 'AI',
+  },
+}
+
+export function t(lang: Lang, key: string): string {
+  return text[lang][key] ?? text.en[key] ?? key
+}
+
+export function speechLang(lang: Lang): string {
+  return LANGS.find((item) => item.id === lang)?.speech ?? 'en-US'
+}
