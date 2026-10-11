@@ -1,9 +1,25 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { fetchCatalog, runTool, sendChat, type Download, type SearchHit, type SearchMeta, type Tool } from './api'
+import {
+  exportGeneratedText,
+  fetchCatalog,
+  formatApiError,
+  isBackendUnreachable,
+  probeYoutube,
+  runTool,
+  sendChat,
+  synthesizeSpeech,
+  withBackendRetry,
+  type Download,
+  type SearchHit,
+  type SearchMeta,
+  type Tool,
+  type YoutubeQuality,
+} from './api'
 import { useOptionalAuth } from './auth'
 import { apiUrl, portalUrl } from './config'
-import { CATEGORIES, CATEGORY_META, CategoryIcon, ToolGlyph, type CategoryId } from './icons'
-import { LANGS, speechLang, t, type Lang } from './i18n'
+import { CATEGORIES, CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type CategoryId } from './icons'
+import { LANGS, languageOptionLabel, speechLang, t, type Lang } from './i18n'
+import { PROFILE_CODES, WORLD_REGIONS, regionLabel } from './regions'
 
 type Rec = {
   lang: string
@@ -11,6 +27,9 @@ type Rec = {
   stop: () => void
   onresult: ((event: { results: { 0: { 0: { transcript: string } } } }) => void) | null
 }
+
+let activeAudio: HTMLAudioElement | null = null
+let activeObjectUrl: string | null = null
 
 function browserLang(): Lang {
   const stored = localStorage.getItem('tools-lang')
@@ -20,19 +39,54 @@ function browserLang(): Lang {
   return match?.id ?? 'en'
 }
 
-function speak(text: string, lang: Lang) {
-  if (!('speechSynthesis' in window)) return
-  const utterance = new SpeechSynthesisUtterance(text)
-  utterance.lang = speechLang(lang)
-  window.speechSynthesis.cancel()
-  window.speechSynthesis.speak(utterance)
+function stopSpeech() {
+  if (activeAudio) {
+    activeAudio.pause()
+    activeAudio.src = ''
+    activeAudio = null
+  }
+  if (activeObjectUrl) {
+    URL.revokeObjectURL(activeObjectUrl)
+    activeObjectUrl = null
+  }
+  if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+}
+
+async function speakEdge(text: string, lang: Lang, onEnd?: () => void) {
+  stopSpeech()
+  try {
+    const url = await synthesizeSpeech(text, lang)
+    activeObjectUrl = url
+    const audio = new Audio(url)
+    activeAudio = audio
+    audio.onended = () => {
+      stopSpeech()
+      onEnd?.()
+    }
+    audio.onerror = () => {
+      stopSpeech()
+      onEnd?.()
+    }
+    await audio.play()
+  } catch {
+    // Fallback to browser TTS if edge-tts endpoint is unavailable
+    if (!('speechSynthesis' in window)) {
+      onEnd?.()
+      return
+    }
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = speechLang(lang)
+    utterance.onend = () => onEnd?.()
+    utterance.onerror = () => onEnd?.()
+    window.speechSynthesis.speak(utterance)
+  }
 }
 
 export function App() {
   const auth = useOptionalAuth()
   const [lang, setLang] = useState<Lang>(browserLang)
   const [tools, setTools] = useState<Tool[]>([])
-  const [category, setCategory] = useState<CategoryId>('search')
+  const [category, setCategory] = useState<CategoryId>('ai')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Tool | null>(null)
   const [message, setMessage] = useState('')
@@ -44,16 +98,26 @@ export function App() {
   const [chat, setChat] = useState<{ role: 'user' | 'assistant'; text: string }[]>([])
   const [draft, setDraft] = useState('')
   const [speakReplies, setSpeakReplies] = useState(true)
+  const [speaking, setSpeaking] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [openInfoId, setOpenInfoId] = useState<string | null>(null)
+  const [regionMode, setRegionMode] = useState<'auto' | 'manual'>('auto')
+  const [regionChoice, setRegionChoice] = useState('SG')
+  const [regionCustom, setRegionCustom] = useState('')
+  const [docFormat, setDocFormat] = useState('docx')
+  const [docTemplate, setDocTemplate] = useState('')
+  const [exportBusy, setExportBusy] = useState(false)
   const [assistantWidth, setAssistantWidth] = useState(() => {
     const saved = Number(localStorage.getItem('tools-assistant-width') || '420')
     return Number.isFinite(saved) ? Math.min(720, Math.max(300, saved)) : 420
   })
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const chatAbortRef = useRef<AbortController | null>(null)
+  const threadRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     localStorage.setItem('tools-lang', lang)
-    document.documentElement.lang = lang === 'zh' ? 'zh-Hans' : lang
+    document.documentElement.lang = lang === 'zh' ? 'zh-Hans' : lang === 'yue' ? 'zh-HK' : lang
   }, [lang])
 
   useEffect(() => {
@@ -61,26 +125,62 @@ export function App() {
   }, [assistantWidth])
 
   useEffect(() => {
-    fetchCatalog().then((catalog) => {
+    const el = threadRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+  }, [chat, busy])
+
+  useEffect(() => () => {
+    chatAbortRef.current?.abort()
+    stopSpeech()
+  }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void withBackendRetry(
+      () => fetchCatalog(controller.signal),
+      {
+        signal: controller.signal,
+        onAttempt: (_attempt, error) => {
+          setLoadError(formatApiError(error) + ' Reconnecting…')
+        },
+      },
+    ).then((catalog) => {
+      if (controller.signal.aborted) return
+      setLoadError('')
       setTools(catalog.tools)
       const first = catalog.tools.find((tool) => tool.id === 'web_search')
         ?? catalog.tools.find((tool) => tool.category === 'search')
         ?? catalog.tools[0]
         ?? null
       setSelected(first)
-    }).catch((exc: Error) => setLoadError(exc.message))
+    }).catch((exc: Error) => {
+      if (controller.signal.aborted || exc.name === 'AbortError' || /aborted/i.test(exc.message)) return
+      setLoadError(formatApiError(exc))
+    })
+    return () => controller.abort()
   }, [])
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    const categories = category === 'search' ? ['search', 'ai'] : [category]
-    return tools.filter((tool) => categories.includes(tool.category) && (
-      !needle || tool.title.toLowerCase().includes(needle) || tool.description.toLowerCase().includes(needle)
-    ))
+    // Site-wide tool search (title, description, id, category).
+    if (needle) {
+      return tools.filter((tool) => (
+        tool.title.toLowerCase().includes(needle)
+        || tool.description.toLowerCase().includes(needle)
+        || tool.id.toLowerCase().includes(needle)
+        || tool.category.toLowerCase().includes(needle)
+      ))
+    }
+    // AI home: AI tools only (web search is the main panel default, not listed again).
+    if (category === 'ai') {
+      return tools.filter((tool) => tool.category === 'ai')
+    }
+    return tools.filter((tool) => tool.category === category)
   }, [tools, category, query])
 
   function categoryLabel(id: CategoryId | string): string {
-    return id === 'search' ? t(lang, 'searchCat') : t(lang, id)
+    return t(lang, id)
   }
 
   function pickCategory(id: CategoryId) {
@@ -90,7 +190,8 @@ export function App() {
     setSearchHits([])
     setSearchMeta({})
     setDownloads([])
-    if (id === 'search') {
+    setOpenInfoId(null)
+    if (id === 'ai') {
       setSelected(tools.find((tool) => tool.id === 'web_search') ?? tools.find((tool) => tool.category === 'ai') ?? null)
       return
     }
@@ -107,11 +208,15 @@ export function App() {
     try {
       const result = await runTool(selected.id, form)
       setMessage(result.message)
-      setDownloads(result.downloads)
+      if (selected.id === 'summarize' || selected.id === 'rewrite') {
+        setDownloads([])
+      } else {
+        setDownloads(result.downloads)
+      }
       setSearchHits(result.results || [])
       setSearchMeta(result.meta || {})
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : 'Request failed')
+      setError(formatApiError(exc))
       setSearchHits([])
       setSearchMeta({})
     } finally {
@@ -119,27 +224,84 @@ export function App() {
     }
   }
 
+  async function onExportResult(format: string) {
+    if (!message.trim()) return
+    setExportBusy(true)
+    setError('')
+    try {
+      const result = await exportGeneratedText(message, format)
+      setDownloads((prev) => [...prev, ...result.downloads])
+    } catch (exc) {
+      setError(formatApiError(exc))
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
   async function onChat(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const text = draft.trim()
-    if (!text) return
+    if (!text || busy) return
     setDraft('')
     setChat((items) => [...items, { role: 'user', text }])
     const form = new FormData(event.currentTarget)
     form.set('message', text)
     form.set('language', lang)
+    chatAbortRef.current?.abort()
+    const controller = new AbortController()
+    chatAbortRef.current = controller
     setBusy(true)
     try {
-      const result = await sendChat(form)
-      setChat((items) => [...items, { role: 'assistant', text: result.reply }])
+      const result = await withBackendRetry(
+        () => sendChat(form, controller.signal),
+        {
+          signal: controller.signal,
+          maxAttempts: 4,
+          baseDelayMs: 1500,
+          onAttempt: (attempt, error) => {
+            if (!isBackendUnreachable(error)) return
+            setChat((items) => {
+              const next = [...items]
+              const notice = formatApiError(error) + ` Retry ${attempt}/3…`
+              if (next.length && next[next.length - 1]?.role === 'assistant' && next[next.length - 1].text.includes('Backend unreachable')) {
+                next[next.length - 1] = { role: 'assistant', text: notice }
+                return next
+              }
+              return [...next, { role: 'assistant', text: notice }]
+            })
+          },
+        },
+      )
+      setChat((items) => {
+        const withoutRetry = items.filter((item) => !(item.role === 'assistant' && item.text.includes('Backend unreachable')))
+        return [...withoutRetry, { role: 'assistant', text: result.reply }]
+      })
       setDownloads(result.downloads)
-      if (speakReplies) speak(result.reply, lang)
+      if (speakReplies) {
+        setSpeaking(true)
+        void speakEdge(result.reply, lang, () => setSpeaking(false))
+      }
     } catch (exc) {
-      const detail = exc instanceof Error ? exc.message : 'Request failed'
-      setChat((items) => [...items, { role: 'assistant', text: detail }])
+      if (controller.signal.aborted || (exc instanceof DOMException && exc.name === 'AbortError')) {
+        setChat((items) => [...items, { role: 'assistant', text: 'Stopped.' }])
+      } else {
+        setChat((items) => {
+          const withoutRetry = items.filter((item) => !(item.role === 'assistant' && item.text.includes('Backend unreachable')))
+          return [...withoutRetry, { role: 'assistant', text: formatApiError(exc) }]
+        })
+      }
     } finally {
+      if (chatAbortRef.current === controller) chatAbortRef.current = null
       setBusy(false)
     }
+  }
+
+  function onStopAssistant() {
+    chatAbortRef.current?.abort()
+    chatAbortRef.current = null
+    stopSpeech()
+    setSpeaking(false)
+    setBusy(false)
   }
 
   function onVoice() {
@@ -201,7 +363,7 @@ export function App() {
 
       <section className="category-band">
         <div className="category-grid" role="tablist" aria-label="Tool categories">
-          {CATEGORIES.map((id) => {
+          {NAV_CATEGORIES.map((id) => {
             const meta = CATEGORY_META[id]
             const active = id === category
             const label = categoryLabel(id)
@@ -211,14 +373,18 @@ export function App() {
                 type="button"
                 role="tab"
                 aria-selected={active}
-                className={`category-card ${active ? 'on' : ''} ${id === 'search' ? 'search-card' : ''}`}
+                className={`category-card ${active ? 'on' : ''} ${id === 'ai' ? 'home-card' : ''}`}
                 style={{
                   ['--accent' as string]: meta.accent,
                   ['--soft' as string]: meta.soft,
                 }}
                 onClick={() => pickCategory(id)}
               >
-                <span className="category-icon"><CategoryIcon id={id} /></span>
+                {id === 'media' ? (
+                  <span className="category-icon youtube" aria-hidden="true">
+                    <CategoryIcon id={id} />
+                  </span>
+                ) : null}
                 <span className="category-label">{label}</span>
               </button>
             )
@@ -229,7 +395,6 @@ export function App() {
       <div className="workspace" style={{ ['--assistant-width' as string]: `${assistantWidth}px` }}>
         <aside className="catalog">
           <div className="catalog-head" style={{ borderColor: accent.accent }}>
-            <ToolGlyph category={category} />
             <div>
               <strong>{categoryLabel(category)}</strong>
               <span>{visible.length} tools</span>
@@ -239,17 +404,46 @@ export function App() {
           <ul>
             {visible.map((tool) => (
               <li key={tool.id}>
-                <button
-                  type="button"
-                  className={selected?.id === tool.id ? 'on' : ''}
-                  onClick={() => { setSelected(tool); setMessage(''); setError(''); setSearchHits([]); setSearchMeta({}); setDownloads([]) }}
-                >
-                  <ToolGlyph category={tool.category} />
-                  <span>
+                <div className={`catalog-item${selected?.id === tool.id ? ' on' : ''}`}>
+                  <button
+                    type="button"
+                    className="catalog-pick"
+                    title={tool.description}
+                    onClick={() => {
+                      setSelected(tool)
+                      if (tool.category === 'search') setCategory('ai')
+                      else if (CATEGORIES.includes(tool.category as CategoryId)) {
+                        setCategory(tool.category as CategoryId)
+                      }
+                      setMessage('')
+                      setError('')
+                      setSearchHits([])
+                      setSearchMeta({})
+                      setDownloads([])
+                      setOpenInfoId(null)
+                    }}
+                  >
                     <strong>{tool.title}</strong>
-                    <em>{tool.description}</em>
-                  </span>
-                </button>
+                  </button>
+                  <button
+                    type="button"
+                    className={`catalog-info${openInfoId === tool.id ? ' open' : ''}`}
+                    aria-label={`About ${tool.title}`}
+                    aria-expanded={openInfoId === tool.id}
+                    title={tool.description}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setOpenInfoId((current) => (current === tool.id ? null : tool.id))
+                    }}
+                  >
+                    i
+                  </button>
+                  {openInfoId === tool.id ? (
+                    <div className="catalog-tip" role="status">
+                      {tool.description}
+                    </div>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>
@@ -293,16 +487,57 @@ export function App() {
                 </label>
                 <label>
                   {t(lang, 'searchRegion')}
-                  <select name="region" defaultValue="SG">
-                    <option value="SG">Singapore</option>
-                    <option value="IN">India</option>
-                    <option value="MY">Malaysia</option>
-                    <option value="US">United States</option>
-                    <option value="GB">United Kingdom</option>
-                    <option value="AU">Australia</option>
-                    <option value="GLOBAL">Global</option>
+                  <select
+                    name="region_mode"
+                    value={regionMode}
+                    onChange={(event) => setRegionMode(event.target.value as 'auto' | 'manual')}
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="manual">Manual</option>
                   </select>
                 </label>
+                {regionMode === 'manual' ? (
+                  <>
+                    <label>
+                      Choose region
+                      <select
+                        value={regionChoice}
+                        onChange={(event) => {
+                          setRegionChoice(event.target.value)
+                          setRegionCustom('')
+                        }}
+                      >
+                        {WORLD_REGIONS.map((item) => (
+                          <option key={item.code} value={item.code}>{item.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Or type region
+                      <input
+                        type="text"
+                        value={regionCustom}
+                        onChange={(event) => setRegionCustom(event.target.value)}
+                        placeholder="City, state, or country"
+                      />
+                    </label>
+                    <input
+                      type="hidden"
+                      name="region"
+                      value={regionCustom.trim() ? 'GLOBAL' : (PROFILE_CODES.has(regionChoice) ? regionChoice : 'GLOBAL')}
+                    />
+                    <input
+                      type="hidden"
+                      name="location"
+                      value={regionCustom.trim() || regionLabel(regionChoice)}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <input type="hidden" name="region" value="AUTO" />
+                    <input type="hidden" name="location" value="" />
+                  </>
+                )}
                 <input type="hidden" name="language" value={lang} />
               </div>
               {error && <p className="error">{error}</p>}
@@ -311,9 +546,89 @@ export function App() {
               <SearchResults items={searchHits} />
             </form>
           )}
-          {selected && selected.id !== 'web_search' && (
-            <form key={selected.id} className="tool-form" onSubmit={onRun}>
-              <div className="tool-hero" style={{ background: `linear-gradient(135deg, ${accent.soft}, #ffffff 60%)` }}>
+          {selected && selected.id !== 'web_search' && selected.id === 'translate' && (
+            <form key={selected.id} className="tool-form translate-form" onSubmit={onRun}>
+              <div className="tool-hero">
+                <ToolGlyph category={selected.category} />
+                <div>
+                  <h2>{selected.title}</h2>
+                  <p>{selected.description}</p>
+                </div>
+              </div>
+              <div className="gt-shell">
+                <div className="gt-langs">
+                  <label className="gt-lang-pill">
+                    <span className="sr-only">{t(lang, 'detectLang')}</span>
+                    <select name="source_language" defaultValue="auto">
+                      <option value="auto">{t(lang, 'detectLang')}</option>
+                      {(selected.fields.find((f) => f.name === 'language')?.options || []).map((option) => (
+                        <option key={option} value={option}>{languageOptionLabel(option)}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <span className="gt-swap" aria-hidden="true">⇄</span>
+                  <label className="gt-lang-pill">
+                    <span className="sr-only">{t(lang, 'targetLang')}</span>
+                    <select name="language" defaultValue={selected.fields.find((f) => f.name === 'language')?.default || 'en'}>
+                      {(selected.fields.find((f) => f.name === 'language')?.options || []).map((option) => (
+                        <option key={option} value={option}>{languageOptionLabel(option)}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="gt-panels">
+                  <div className="gt-panel">
+                    <textarea
+                      name="text"
+                      rows={10}
+                      defaultValue=""
+                      placeholder={t(lang, 'pastePlaceholder')}
+                      aria-label={t(lang, 'orPaste')}
+                    />
+                  </div>
+                  <div className="gt-panel result-panel">
+                    {message ? (
+                      <div className="gt-result">{message}</div>
+                    ) : (
+                      <p className="gt-result-empty">{t(lang, 'result')}</p>
+                    )}
+                  </div>
+                </div>
+                <FileDropField
+                  accept={selected.accept}
+                  multiple={selected.multiple}
+                  dropHint={t(lang, 'dropHint')}
+                  browseLabel={t(lang, 'browse')}
+                  emptyLabel={t(lang, 'files')}
+                />
+                <button type="submit" className="btn-primary gt-action" disabled={busy}>
+                  {busy ? t(lang, 'working') : selected.title}
+                </button>
+                {error && <p className="error">{error}</p>}
+                <DownloadList items={downloads} />
+              </div>
+            </form>
+          )}
+          {selected && (selected.id === 'youtube_mp4' || selected.id === 'youtube_mp3') && (
+            <YoutubeToolForm
+              tool={selected}
+              kind={selected.id === 'youtube_mp3' ? 'mp3' : 'mp4'}
+              accent={accent.accent}
+              busy={busy}
+              error={error}
+              message={message}
+              downloads={downloads}
+              runLabel={t(lang, 'run')}
+              workingLabel={t(lang, 'working')}
+              resultLabel={t(lang, 'result')}
+              onSubmit={onRun}
+            />
+          )}
+          {selected && selected.id !== 'web_search' && selected.id !== 'translate'
+            && selected.id !== 'summarize' && selected.id !== 'rewrite' && selected.id !== 'generate_document'
+            && selected.id !== 'youtube_mp4' && selected.id !== 'youtube_mp3' && (
+            <form key={selected.id} className="tool-form modern-tool" onSubmit={onRun}>
+              <div className="tool-hero">
                 <ToolGlyph category={selected.category} />
                 <div>
                   <h2>{selected.title}</h2>
@@ -321,25 +636,161 @@ export function App() {
                 </div>
               </div>
               {selected.accept && (
-                <label className="block">
-                  {t(lang, 'upload')}
-                  <input name="files" type="file" accept={selected.accept} multiple={selected.multiple} />
-                </label>
+                <FileDropField
+                  accept={selected.accept}
+                  multiple={selected.multiple}
+                  dropHint={t(lang, 'dropHint')}
+                  browseLabel={t(lang, 'browse')}
+                  emptyLabel={t(lang, 'files')}
+                />
               )}
-              {selected.fields.map((field) => (
-                <label key={field.name} className="block">
-                  {field.label}
-                  {field.kind === 'textarea' ? (
-                    <textarea name={field.name} defaultValue={field.default} required={field.required} rows={6} />
-                  ) : field.kind === 'select' ? (
-                    <select name={field.name} defaultValue={field.default}>
-                      {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
-                    </select>
-                  ) : (
-                    <input name={field.name} type={field.kind} defaultValue={field.default} required={field.required} />
-                  )}
-                </label>
-              ))}
+              <div className="field-stack">
+                {selected.fields.map((field) => (
+                  <label key={field.name} className="field-card">
+                    <span className="field-label">{field.label}</span>
+                    {field.kind === 'textarea' ? (
+                      <textarea
+                        name={field.name}
+                        defaultValue={field.default}
+                        required={field.required}
+                        rows={7}
+                        placeholder={field.label}
+                      />
+                    ) : field.kind === 'select' ? (
+                      <select name={field.name} defaultValue={field.default}>
+                        {field.options.map((option) => (
+                          <option key={option} value={option}>
+                            {field.name === 'language' ? languageOptionLabel(option) : option}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        name={field.name}
+                        type={field.kind}
+                        defaultValue={field.default}
+                        required={field.required}
+                        placeholder={field.label}
+                      />
+                    )}
+                  </label>
+                ))}
+              </div>
+              <button type="submit" className="btn-primary" disabled={busy} style={{ background: accent.accent }}>
+                {busy ? t(lang, 'working') : t(lang, 'run')}
+              </button>
+              {error && <p className="error">{error}</p>}
+              {message && <p className="ok">{t(lang, 'result')}: {message}</p>}
+              <DownloadList items={downloads} />
+            </form>
+          )}
+          {selected && (selected.id === 'summarize' || selected.id === 'rewrite') && (
+            <form key={selected.id} className="tool-form modern-tool" onSubmit={onRun}>
+              <div className="tool-hero">
+                <ToolGlyph category={selected.category} />
+                <div>
+                  <h2>{selected.title}</h2>
+                  <p>{selected.description}</p>
+                </div>
+              </div>
+              {selected.accept && (
+                <FileDropField
+                  accept={selected.accept}
+                  multiple={selected.multiple}
+                  dropHint={t(lang, 'dropHint')}
+                  browseLabel={t(lang, 'browse')}
+                  emptyLabel={t(lang, 'files')}
+                />
+              )}
+              <div className="field-stack">
+                {selected.fields.map((field) => (
+                  <label key={field.name} className="field-card">
+                    <span className="field-label">{field.label}</span>
+                    {field.kind === 'textarea' ? (
+                      <textarea name={field.name} defaultValue={field.default} required={field.required} rows={7} placeholder={field.label} />
+                    ) : (
+                      <input name={field.name} type={field.kind} defaultValue={field.default} required={field.required} placeholder={field.label} />
+                    )}
+                  </label>
+                ))}
+              </div>
+              <button type="submit" className="btn-primary" disabled={busy} style={{ background: accent.accent }}>
+                {busy ? t(lang, 'working') : t(lang, 'run')}
+              </button>
+              {error && <p className="error">{error}</p>}
+              {message ? (
+                <div className="result-card">
+                  <h3>{t(lang, 'result')}</h3>
+                  <pre className="result-body">{message}</pre>
+                  <p className="export-ask">Export in another file format?</p>
+                  <div className="export-actions">
+                    {['txt', 'md', 'docx', 'pdf'].map((fmt) => (
+                      <button
+                        key={fmt}
+                        type="button"
+                        className="btn-secondary"
+                        disabled={exportBusy}
+                        onClick={() => void onExportResult(fmt)}
+                      >
+                        {exportBusy ? t(lang, 'working') : fmt.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                  <DownloadList items={downloads} />
+                </div>
+              ) : null}
+            </form>
+          )}
+          {selected && selected.id === 'generate_document' && (
+            <form key={selected.id} className="tool-form modern-tool" onSubmit={onRun}>
+              <div className="tool-hero">
+                <ToolGlyph category={selected.category} />
+                <div>
+                  <h2>{selected.title}</h2>
+                  <p>{selected.description}</p>
+                </div>
+              </div>
+              <div className="format-picker" role="group" aria-label="Document format">
+                {(['pdf', 'docx', 'pptx'] as const).map((fmt) => (
+                  <button
+                    key={fmt}
+                    type="button"
+                    className={`format-card${docFormat === fmt ? ' on' : ''}`}
+                    onClick={() => setDocFormat(fmt)}
+                  >
+                    <strong>{fmt.toUpperCase()}</strong>
+                    <span>{fmt === 'pdf' ? 'Portable document' : fmt === 'docx' ? 'Word document' : 'PowerPoint slides'}</span>
+                  </button>
+                ))}
+              </div>
+              <input type="hidden" name="format" value={docFormat} />
+              <label className="field-card">
+                <span className="field-label">Request</span>
+                <textarea name="request" required rows={7} placeholder="Describe the document you need…" />
+              </label>
+              <div className="template-block">
+                <p className="field-label">Template (optional)</p>
+                <div className="template-chips">
+                  {['', 'Business letter', 'Meeting notes', 'Resume / CV', 'Project proposal', 'Status report'].map((item) => (
+                    <button
+                      key={item || 'none'}
+                      type="button"
+                      className={`chip${docTemplate === item ? ' on' : ''}`}
+                      onClick={() => setDocTemplate(item)}
+                    >
+                      {item || 'No template'}
+                    </button>
+                  ))}
+                </div>
+                <input type="hidden" name="template_preset" value={docTemplate} />
+                <FileDropField
+                  accept=".docx,.txt,.md"
+                  multiple={false}
+                  dropHint="Upload your own template (optional)"
+                  browseLabel={t(lang, 'browse')}
+                  emptyLabel="No template file selected"
+                />
+              </div>
               <button type="submit" className="btn-primary" disabled={busy} style={{ background: accent.accent }}>
                 {busy ? t(lang, 'working') : t(lang, 'run')}
               </button>
@@ -369,22 +820,237 @@ export function App() {
               {t(lang, 'speak')}
             </label>
           </div>
-          <div className="thread">
+          <div className="thread" ref={threadRef}>
             {chat.length === 0 && <p className="empty-thread">{t(lang, 'placeholder')}</p>}
             {chat.map((item, index) => (
               <div key={index} className={`bubble ${item.role}`}>{item.text}</div>
             ))}
+            {busy ? <div className="bubble assistant">{t(lang, 'working')}</div> : null}
           </div>
           <form className="assistant-form" onSubmit={onChat}>
             <textarea name="draft" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t(lang, 'placeholder')} rows={3} />
             <input name="files" type="file" multiple />
             <div className="row">
               <button type="button" className="btn-secondary" onClick={onVoice}>{t(lang, 'voice')}</button>
-              <button type="submit" className="btn-primary" disabled={busy}>{t(lang, 'send')}</button>
+              <div className="row" style={{ gap: '0.45rem', marginLeft: 'auto' }}>
+                {(busy || speaking) ? (
+                  <button type="button" className="btn-stop" onClick={onStopAssistant}>{t(lang, 'stop')}</button>
+                ) : null}
+                <button type="submit" className="btn-primary" disabled={busy}>{t(lang, 'send')}</button>
+              </div>
             </div>
           </form>
         </aside>
       </div>
+    </div>
+  )
+}
+
+function formatBytes(bytes: number | null | undefined): string | null {
+  if (bytes == null || bytes <= 0) return null
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
+function youtubeQualityLabel(kind: 'mp4' | 'mp3', option: string): string {
+  if (kind === 'mp3') return `${option} kbps`
+  if (option === 'best') return 'Best available'
+  return `${option}p`
+}
+
+function YoutubeToolForm({
+  tool,
+  kind,
+  accent,
+  busy,
+  error,
+  message,
+  downloads,
+  runLabel,
+  workingLabel,
+  resultLabel,
+  onSubmit,
+}: {
+  tool: Tool
+  kind: 'mp4' | 'mp3'
+  accent: string
+  busy: boolean
+  error: string
+  message: string
+  downloads: Download[]
+  runLabel: string
+  workingLabel: string
+  resultLabel: string
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  const urlField = tool.fields.find((field) => field.name === 'url')
+  const qualityField = tool.fields.find((field) => field.name === 'quality')
+  const qualityOptions = qualityField?.options?.length
+    ? qualityField.options
+    : kind === 'mp3'
+      ? ['64', '128', '192', '320']
+      : ['360', '480', '720', '1080', 'best']
+  const defaultQuality = qualityField?.default || (kind === 'mp3' ? '192' : '720')
+  const [url, setUrl] = useState('')
+  const [quality, setQuality] = useState(defaultQuality)
+  const [qualities, setQualities] = useState<YoutubeQuality[]>([])
+  const [probeBusy, setProbeBusy] = useState(false)
+  const [probeError, setProbeError] = useState('')
+  const [title, setTitle] = useState('')
+
+  useEffect(() => {
+    setUrl('')
+    setQuality(defaultQuality)
+    setQualities([])
+    setProbeError('')
+    setTitle('')
+  }, [tool.id, defaultQuality])
+
+  useEffect(() => {
+    const trimmed = url.trim()
+    if (!trimmed) {
+      setQualities([])
+      setProbeError('')
+      setTitle('')
+      return
+    }
+    if (!/youtube\.com|youtu\.be|youtube-nocookie\.com/i.test(trimmed)) {
+      setQualities([])
+      setProbeError('')
+      return
+    }
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      setProbeBusy(true)
+      setProbeError('')
+      void probeYoutube(trimmed, kind, controller.signal)
+        .then((payload) => {
+          setTitle(payload.title || '')
+          setQualities(payload.qualities || [])
+        })
+        .catch((exc) => {
+          if (exc instanceof DOMException && exc.name === 'AbortError') return
+          setQualities([])
+          setProbeError(exc instanceof Error ? exc.message : 'Could not read video info')
+        })
+        .finally(() => setProbeBusy(false))
+    }, 500)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [url, kind])
+
+  const chosen = qualities.find((item) => item.id === quality)
+  const sizeLabel = formatBytes(chosen?.bytes)
+  let sizeText = 'Choose a quality to see expected file size.'
+  if (!url.trim()) sizeText = 'Paste a YouTube URL, then choose quality to see expected file size.'
+  else if (probeBusy) sizeText = 'Checking expected file size…'
+  else if (probeError) sizeText = probeError
+  else if (sizeLabel) sizeText = `Expected file size: ${sizeLabel}`
+  else if (qualities.length) sizeText = 'Expected file size: unknown until download.'
+
+  return (
+    <form key={tool.id} className="tool-form modern-tool" onSubmit={onSubmit}>
+      <div className="tool-hero">
+        <ToolGlyph category={tool.category} />
+        <div>
+          <h2>{tool.title}</h2>
+          <p>{tool.description}</p>
+        </div>
+      </div>
+      <div className="field-stack">
+        <label className="field-card">
+          <span className="field-label">{urlField?.label || 'YouTube URL'}</span>
+          <input
+            name="url"
+            type="text"
+            required
+            value={url}
+            onChange={(event) => setUrl(event.target.value)}
+            placeholder="https://www.youtube.com/watch?v=…"
+          />
+          {title ? <span className="field-hint">{title}</span> : null}
+        </label>
+        <label className="field-card">
+          <span className="field-label">{qualityField?.label || 'Quality'}</span>
+          <select name="quality" value={quality} onChange={(event) => setQuality(event.target.value)}>
+            {qualityOptions.map((option) => (
+              <option key={option} value={option}>
+                {youtubeQualityLabel(kind, option)}
+              </option>
+            ))}
+          </select>
+          <span className="field-hint">{sizeText}</span>
+        </label>
+      </div>
+      <button type="submit" className="btn-primary" disabled={busy} style={{ background: accent }}>
+        {busy ? workingLabel : runLabel}
+      </button>
+      {error && <p className="error">{error}</p>}
+      {message && <p className="ok">{resultLabel}: {message}</p>}
+      <DownloadList items={downloads} />
+    </form>
+  )
+}
+
+function FileDropField({
+  accept,
+  multiple,
+  dropHint,
+  browseLabel,
+  emptyLabel,
+}: {
+  accept: string
+  multiple: boolean
+  dropHint: string
+  browseLabel: string
+  emptyLabel: string
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const [names, setNames] = useState('')
+  const [dragging, setDragging] = useState(false)
+
+  function syncNames(list: FileList | null) {
+    if (!list || !list.length) {
+      setNames('')
+      return
+    }
+    setNames(Array.from(list).map((file) => file.name).join(', '))
+  }
+
+  return (
+    <div
+      className={`dropzone${dragging ? ' dragging' : ''}`}
+      onDragEnter={(event) => { event.preventDefault(); setDragging(true) }}
+      onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(event) => {
+        event.preventDefault()
+        setDragging(false)
+        const input = inputRef.current
+        if (!input || !event.dataTransfer.files.length) return
+        input.files = event.dataTransfer.files
+        syncNames(event.dataTransfer.files)
+      }}
+    >
+      <input
+        ref={inputRef}
+        className="sr-only"
+        name="files"
+        type="file"
+        accept={accept}
+        multiple={multiple}
+        onChange={(event) => syncNames(event.target.files)}
+      />
+      <div className="dropzone-icon" aria-hidden="true">⬆</div>
+      <p className="dropzone-title">{dropHint}</p>
+      <button type="button" className="btn-secondary" onClick={() => inputRef.current?.click()}>
+        {browseLabel}
+      </button>
+      <p className="dropzone-files">{names || emptyLabel}</p>
     </div>
   )
 }

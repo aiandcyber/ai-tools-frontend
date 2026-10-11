@@ -1,13 +1,17 @@
 export const CATEGORIES = ['search', 'pdf', 'office', 'image', 'media', 'utility', 'ai'] as const
 
+/** Top category tabs — AI is home (shows search). No separate Search tab. */
+export const NAV_CATEGORIES = ['ai', 'media', 'pdf', 'office', 'image', 'utility'] as const
+
 export type CategoryId = (typeof CATEGORIES)[number]
+export type NavCategoryId = (typeof NAV_CATEGORIES)[number]
 
 export const CATEGORY_META: Record<CategoryId, { accent: string; soft: string }> = {
   search: { accent: '#0e7490', soft: '#cffafe' },
   pdf: { accent: '#0f766e', soft: '#ccfbf1' },
   office: { accent: '#1d4ed8', soft: '#dbeafe' },
   image: { accent: '#c2410c', soft: '#ffedd5' },
-  media: { accent: '#7c2d12', soft: '#fed7aa' },
+  media: { accent: '#FF0000', soft: '#ffe4e4' },
   utility: { accent: '#155e75', soft: '#e0f2fe' },
   ai: { accent: '#115e59', soft: '#a7f3d0' },
 }
@@ -51,8 +55,8 @@ export function CategoryIcon({ id }: { id: CategoryId }) {
   if (id === 'media') {
     return (
       <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
-        <path {...common} d="M4 8v8a3 3 0 0 0 6 0V8a3 3 0 0 0-6 0z" />
-        <path {...common} d="M10 11h2l6-3v8l-6-3h-2" />
+        <rect x="2" y="5" width="20" height="14" rx="4" fill="currentColor" stroke="none" />
+        <path d="M10 9.2v5.6L15.5 12 10 9.2z" fill="#fff" stroke="none" />
       </svg>
     )
   }

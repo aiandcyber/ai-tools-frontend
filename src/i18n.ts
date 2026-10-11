@@ -1,7 +1,8 @@
-export type Lang = 'en' | 'zh' | 'ta' | 'hi' | 'ml' | 'kn' | 'te'
+export type Lang = 'en' | 'yue' | 'zh' | 'ta' | 'hi' | 'ml' | 'kn' | 'te'
 
 export const LANGS: { id: Lang; label: string; speech: string }[] = [
   { id: 'en', label: 'English', speech: 'en-US' },
+  { id: 'yue', label: 'Cantonese', speech: 'zh-HK' },
   { id: 'zh', label: '中文', speech: 'zh-CN' },
   { id: 'ta', label: 'தமிழ்', speech: 'ta-IN' },
   { id: 'hi', label: 'हिन्दी', speech: 'hi-IN' },
@@ -17,16 +18,47 @@ const text: Record<Lang, Record<string, string>> = {
     placeholder: 'Ask me to run a tool…', send: 'Send', signIn: 'Sign in', signOut: 'Sign out',
     run: 'Run', working: 'Working…', upload: 'Files', language: 'Language', speak: 'Speak replies',
     result: 'Result', empty: 'Choose a tool.', files: 'No file selected', voice: 'Voice',
-    searchCat: 'Search a Person or Topic',
+    searchCat: 'Search a Person or Product or Topic',
     searchAction: 'Search',
-    searchPlaceholder: 'Search a person or topic…',
-    searchSubtitle: 'People, topics, news and social — regional results first',
+    searchPlaceholder: 'Search a person, product, or topic…',
+    searchSubtitle: 'People, products, topics, news and social — regional results first',
     searchMode: 'Mode',
     searchRegion: 'Region priority',
     modeAuto: 'Auto',
     modePerson: 'Person',
     modeTopic: 'Topic',
-    pdf: 'Documents / PDF', office: 'Office', image: 'Images', media: 'Audio / video', utility: 'Utilities', ai: 'AI',
+    pdf: 'Documents / PDF', office: 'Office', image: 'Images', media: 'YouTube / Audio / Video', utility: 'Utilities', ai: 'AI',
+    dropHint: 'Drag & drop a file here, or browse',
+    browse: 'Browse files',
+    orPaste: 'Or paste text',
+    detectLang: 'Detect language',
+    targetLang: 'Target language',
+    pastePlaceholder: 'Enter or paste text here',
+    stop: 'Stop',
+  },
+  yue: {
+    brand: 'Tools', portal: 'AI-for All', headline: 'Free AI Tools For All',
+    search: 'Search tools', assistant: 'I am Your AI Assistant',
+    placeholder: 'Ask me to run a tool…', send: 'Send', signIn: 'Sign in', signOut: 'Sign out',
+    run: 'Run', working: 'Working…', upload: 'Files', language: 'Language', speak: 'Speak replies',
+    result: 'Result', empty: 'Choose a tool.', files: 'No file selected', voice: 'Voice',
+    searchCat: 'Search a Person or Product or Topic',
+    searchAction: 'Search',
+    searchPlaceholder: 'Search a person, product, or topic…',
+    searchSubtitle: 'People, products, topics, news and social — regional results first',
+    searchMode: 'Mode',
+    searchRegion: 'Region priority',
+    modeAuto: 'Auto',
+    modePerson: 'Person',
+    modeTopic: 'Topic',
+    pdf: 'Documents / PDF', office: 'Office', image: 'Images', media: 'YouTube / Audio / Video', utility: 'Utilities', ai: 'AI',
+    dropHint: 'Drag & drop a file here, or browse',
+    browse: 'Browse files',
+    orPaste: 'Or paste text',
+    detectLang: 'Detect language',
+    targetLang: 'Target language',
+    pastePlaceholder: 'Enter or paste text here',
+    stop: 'Stop',
   },
   zh: {
     brand: '工具', portal: 'AI-for All', headline: 'Free AI Tools For All',
@@ -37,7 +69,7 @@ const text: Record<Lang, Record<string, string>> = {
     searchCat: '搜索人或主题',
     searchAction: '搜索',
     searchPlaceholder: '搜索人或主题…',
-    pdf: '文档 / PDF', office: '办公', image: '图片', media: '音频 / 视频', utility: '实用工具', ai: '人工智能',
+    pdf: '文档 / PDF', office: '办公', image: '图片', media: 'YouTube / 音频 / 视频', utility: '实用工具', ai: '人工智能',
   },
   ta: {
     brand: 'கருவிகள்', portal: 'AI-for All', headline: 'Free AI Tools For All',
@@ -48,7 +80,7 @@ const text: Record<Lang, Record<string, string>> = {
     searchCat: 'நபர் அல்லது தலைப்பைத் தேடுங்கள்',
     searchAction: 'தேடு',
     searchPlaceholder: 'நபர் அல்லது தலைப்பைத் தேடுங்கள்…',
-    pdf: 'ஆவணங்கள் / PDF', office: 'அலுவலகம்', image: 'படங்கள்', media: 'ஒலி / காணொலி', utility: 'பயன்கள்', ai: 'AI',
+    pdf: 'ஆவணங்கள் / PDF', office: 'அலுவலகம்', image: 'படங்கள்', media: 'YouTube / ஒலி / காணொலி', utility: 'பயன்கள்', ai: 'AI',
   },
   hi: {
     brand: 'उपकरण', portal: 'AI-for All', headline: 'Free AI Tools For All',
@@ -59,7 +91,7 @@ const text: Record<Lang, Record<string, string>> = {
     searchCat: 'व्यक्ति या विषय खोजें',
     searchAction: 'खोजें',
     searchPlaceholder: 'व्यक्ति या विषय खोजें…',
-    pdf: 'दस्तावेज़ / PDF', office: 'ऑफिस', image: 'चित्र', media: 'ऑडियो / वीडियो', utility: 'उपयोगिताएँ', ai: 'AI',
+    pdf: 'दस्तावेज़ / PDF', office: 'ऑफिस', image: 'चित्र', media: 'YouTube / ऑडियो / वीडियो', utility: 'उपयोगिताएँ', ai: 'AI',
   },
   ml: {
     brand: 'ഉപകരണങ്ങൾ', portal: 'AI-for All', headline: 'Free AI Tools For All',
@@ -70,7 +102,7 @@ const text: Record<Lang, Record<string, string>> = {
     searchCat: 'വ്യക്തിയെയോ വിഷയത്തെയോ തിരയുക',
     searchAction: 'തിരയുക',
     searchPlaceholder: 'വ്യക്തിയെയോ വിഷയത്തെയോ തിരയുക…',
-    pdf: 'രേഖകൾ / PDF', office: 'ഓഫീസ്', image: 'ചിത്രങ്ങൾ', media: 'ശബ്ദം / വീഡിയോ', utility: 'യൂട്ടിലിറ്റി', ai: 'AI',
+    pdf: 'രേഖകൾ / PDF', office: 'ഓഫീസ്', image: 'ചിത്രങ്ങൾ', media: 'YouTube / ശബ്ദം / വീഡിയോ', utility: 'യൂട്ടിലിറ്റി', ai: 'AI',
   },
   kn: {
     brand: 'ಉಪಕರಣಗಳು', portal: 'AI-for All', headline: 'Free AI Tools For All',
@@ -81,7 +113,7 @@ const text: Record<Lang, Record<string, string>> = {
     searchCat: 'ವ್ಯಕ್ತಿ ಅಥವಾ ವಿಷಯವನ್ನು ಹುಡುಕಿ',
     searchAction: 'ಹುಡುಕಿ',
     searchPlaceholder: 'ವ್ಯಕ್ತಿ ಅಥವಾ ವಿಷಯವನ್ನು ಹುಡುಕಿ…',
-    pdf: 'ದಾಖಲೆಗಳು / PDF', office: 'ಕಚೇರಿ', image: 'ಚಿತ್ರಗಳು', media: 'ಆಡಿಯೋ / ವೀಡಿಯೊ', utility: 'ಉಪಯುಕ್ತತೆಗಳು', ai: 'AI',
+    pdf: 'ದಾಖಲೆಗಳು / PDF', office: 'ಕಚೇರಿ', image: 'ಚಿತ್ರಗಳು', media: 'YouTube / ಆಡಿಯೋ / ವೀಡಿಯೊ', utility: 'ಉಪಯುಕ್ತತೆಗಳು', ai: 'AI',
   },
   te: {
     brand: 'పరికరాలు', portal: 'AI-for All', headline: 'Free AI Tools For All',
@@ -92,7 +124,7 @@ const text: Record<Lang, Record<string, string>> = {
     searchCat: 'వ్యక్తి లేదా అంశాన్ని శోధించండి',
     searchAction: 'శోధించండి',
     searchPlaceholder: 'వ్యక్తి లేదా అంశాన్ని శోధించండి…',
-    pdf: 'పత్రాలు / PDF', office: 'ఆఫీస్', image: 'చిత్రాలు', media: 'ఆడియో / వీడియో', utility: 'యుటిలిటీలు', ai: 'AI',
+    pdf: 'పత్రాలు / PDF', office: 'ఆఫీస్', image: 'చిత్రాలు', media: 'YouTube / ఆడియో / వీడియో', utility: 'యుటిలిటీలు', ai: 'AI',
   },
 }
 
@@ -102,4 +134,8 @@ export function t(lang: Lang, key: string): string {
 
 export function speechLang(lang: Lang): string {
   return LANGS.find((item) => item.id === lang)?.speech ?? 'en-US'
+}
+
+export function languageOptionLabel(code: string): string {
+  return LANGS.find((item) => item.id === code)?.label ?? code
 }
