@@ -139,6 +139,18 @@ export function App() {
   }, [lang])
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const authError = params.get('error_description') || params.get('error')
+    if (!authError) return
+    setError(decodeURIComponent(authError.replace(/\+/g, ' ')))
+    params.delete('error')
+    params.delete('error_description')
+    params.delete('state')
+    const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`
+    window.history.replaceState({}, '', next)
+  }, [])
+
+  useEffect(() => {
     localStorage.setItem('tools-assistant-width', String(assistantWidth))
   }, [assistantWidth])
 
@@ -383,7 +395,11 @@ export function App() {
             </select>
           </label>
           {auth.configured && (
-            <button type="button" className="btn-secondary" onClick={auth.isAuthenticated ? auth.logout : auth.login}>
+            <button
+              type="button"
+              className={auth.isAuthenticated ? 'btn-secondary' : 'btn-primary'}
+              onClick={auth.isAuthenticated ? auth.logout : auth.login}
+            >
               {auth.isAuthenticated ? t(lang, 'signOut') : t(lang, 'signIn')}
             </button>
           )}
