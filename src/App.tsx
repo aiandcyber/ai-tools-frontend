@@ -380,11 +380,9 @@ export function App() {
                 }}
                 onClick={() => pickCategory(id)}
               >
-                {id === 'media' ? (
-                  <span className="category-icon youtube" aria-hidden="true">
-                    <CategoryIcon id={id} />
-                  </span>
-                ) : null}
+                <span className={`category-icon${id === 'media' ? ' youtube' : ''}`}>
+                  <CategoryIcon id={id} />
+                </span>
                 <span className="category-label">{label}</span>
               </button>
             )
@@ -395,6 +393,7 @@ export function App() {
       <div className="workspace" style={{ ['--assistant-width' as string]: `${assistantWidth}px` }}>
         <aside className="catalog">
           <div className="catalog-head" style={{ borderColor: accent.accent }}>
+            <ToolGlyph category={category} />
             <div>
               <strong>{categoryLabel(category)}</strong>
               <span>{visible.length} tools</span>
