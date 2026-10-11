@@ -2,7 +2,7 @@ export type Lang = 'en' | 'yue' | 'zh' | 'ta' | 'hi' | 'ml' | 'kn' | 'te'
 
 export const LANGS: { id: Lang; label: string; speech: string }[] = [
   { id: 'en', label: 'English', speech: 'en-US' },
-  { id: 'yue', label: 'Cantonese', speech: 'zh-HK' },
+  { id: 'yue', label: '粵語', speech: 'zh-HK' },
   { id: 'zh', label: '中文', speech: 'zh-CN' },
   { id: 'ta', label: 'தமிழ்', speech: 'ta-IN' },
   { id: 'hi', label: 'हिन्दी', speech: 'hi-IN' },
