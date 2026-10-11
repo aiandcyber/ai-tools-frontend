@@ -17,6 +17,7 @@ import {
 } from './api'
 import { useOptionalAuth } from './auth'
 import { apiUrl, portalUrl } from './config'
+import { useRequireAuth } from './useRequireAuth'
 import { CATEGORIES, CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type CategoryId } from './icons'
 import { LANGS, languageOptionLabel, speechLang, t, type Lang } from './i18n'
 import { PROFILE_CODES, WORLD_REGIONS, regionLabel } from './regions'
@@ -30,6 +31,22 @@ type Rec = {
 
 let activeAudio: HTMLAudioElement | null = null
 let activeObjectUrl: string | null = null
+
+/** Tools that always call OpenRouter / Gemini. TTS only needs login when it must translate first. */
+const LLM_TOOL_IDS = new Set([
+  'summarize',
+  'translate',
+  'rewrite',
+  'generate_document',
+  'classify',
+  'stt',
+])
+
+function isSignInRequiredError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const msg = error.message.toLowerCase()
+  return msg.includes('sign in required') || msg.includes('invalid token') || msg.includes('"status":401')
+}
 
 function browserLang(): Lang {
   const stored = localStorage.getItem('tools-lang')
@@ -84,6 +101,7 @@ async function speakEdge(text: string, lang: Lang, onEnd?: () => void) {
 
 export function App() {
   const auth = useOptionalAuth()
+  const ensureAuth = useRequireAuth()
   const [lang, setLang] = useState<Lang>(browserLang)
   const [tools, setTools] = useState<Tool[]>([])
   const [category, setCategory] = useState<CategoryId>('ai')
@@ -202,11 +220,21 @@ export function App() {
   async function onRun(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selected) return
+    if (LLM_TOOL_IDS.has(selected.id)) {
+      if (!(await ensureAuth())) return
+    }
     setBusy(true)
     setError('')
-    const form = new FormData(event.currentTarget)
+    const formEl = event.currentTarget
     try {
-      const result = await runTool(selected.id, form)
+      let result
+      try {
+        result = await runTool(selected.id, new FormData(formEl))
+      } catch (exc) {
+        // TTS (and similar) may need login only when the server must call the LLM.
+        if (!isSignInRequiredError(exc) || !(await ensureAuth())) throw exc
+        result = await runTool(selected.id, new FormData(formEl))
+      }
       setMessage(result.message)
       if (selected.id === 'summarize' || selected.id === 'rewrite') {
         setDownloads([])
@@ -242,6 +270,7 @@ export function App() {
     event.preventDefault()
     const text = draft.trim()
     if (!text || busy) return
+    if (!(await ensureAuth())) return
     setDraft('')
     setChat((items) => [...items, { role: 'user', text }])
     const form = new FormData(event.currentTarget)
