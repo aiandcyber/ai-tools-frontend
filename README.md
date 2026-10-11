@@ -37,12 +37,14 @@ Connect [ai-tools-frontend](https://github.com/aiandcyber/ai-tools-frontend) in 
 
 | Variable | Example |
 |---|---|
-| `VITE_API_BASE` | `https://<fargate-alb-host>` (no trailing slash) |
+| `VITE_API_BASE` | `https://api.tools.ai-forall.org` (no trailing slash) |
 | `VITE_PORTAL_URL` | `https://ai-forall.org` |
-| `VITE_AUTH0_DOMAIN` | (optional) |
-| `VITE_AUTH0_CLIENT_ID` | (optional) |
-| `VITE_AUTH0_AUDIENCE` | (optional) |
-| `VITE_AUTH_REQUIRED` | `false` until login is enforced |
+| `VITE_AUTH0_DOMAIN` | `dev-tvq4tbikhbet8orb.us.auth0.com` |
+| `VITE_AUTH0_CLIENT_ID` | Tools SPA Client ID |
+| `VITE_AUTH0_AUDIENCE` | `https://api.ai-forall.org` |
+| `VITE_AUTH_REQUIRED` | `true` |
+
+Also add production Callback / Logout / Web Origins on the Auth0 SPA: `https://tools.ai-forall.org`.
 
 `wrangler.jsonc` sets `assets.not_found_handling` to `single-page-application`, so unknown paths serve `index.html`. Do not add a `/* /index.html 200` rule in `_redirects`; Workers rejects it as a loop.
 

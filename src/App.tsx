@@ -397,7 +397,7 @@ export function App() {
           {auth.configured && (
             <button
               type="button"
-              className={auth.isAuthenticated ? 'btn-secondary' : 'btn-primary'}
+              className={auth.isAuthenticated ? 'btn-signout' : 'btn-primary'}
               onClick={auth.isAuthenticated ? auth.logout : auth.login}
             >
               {auth.isAuthenticated ? t(lang, 'signOut') : t(lang, 'signIn')}

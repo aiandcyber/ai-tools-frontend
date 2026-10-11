@@ -8,7 +8,12 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
-      '/api': { target: API_TARGET, changeOrigin: true },
+      '/api': {
+        target: API_TARGET,
+        changeOrigin: true,
+        timeout: 600_000,
+        proxyTimeout: 600_000,
+      },
     },
   },
 })

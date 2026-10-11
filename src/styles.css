@@ -134,6 +134,7 @@ button { cursor: pointer; }
 
 .btn-primary,
 .btn-secondary,
+.btn-signout,
 .btn-stop {
   border: 0;
   border-radius: 999px;
@@ -151,6 +152,13 @@ button { cursor: pointer; }
 .btn-secondary {
   background: #eef2f7;
   color: var(--ink);
+}
+
+.btn-signout {
+  background: #ecfdf5;
+  color: var(--sea);
+  border: 1.5px solid var(--sea);
+  box-shadow: 0 6px 14px rgba(15, 118, 110, 0.12);
 }
 
 .category-band {
@@ -1044,6 +1052,7 @@ button { cursor: pointer; }
   .panel { order: 2; }
   .btn-primary,
   .btn-secondary,
+  .btn-signout,
   .btn-stop {
     width: 100%;
   }
