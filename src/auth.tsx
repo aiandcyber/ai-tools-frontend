@@ -11,9 +11,16 @@ function TokenBridge() {
       setAccessTokenGetter(null)
       return
     }
-    setAccessTokenGetter(async () => (
-      await getAccessTokenSilently({ authorizationParams: { audience: AUTH0_AUDIENCE } })
-    ) ?? '')
+    setAccessTokenGetter(async () => {
+      try {
+        return (
+          (await getAccessTokenSilently({ authorizationParams: { audience: AUTH0_AUDIENCE } })) ?? ''
+        )
+      } catch {
+        // Consent / iframe / network failures must not block chat or tools.
+        return ''
+      }
+    })
     return () => setAccessTokenGetter(null)
   }, [getAccessTokenSilently, isAuthenticated])
   return null

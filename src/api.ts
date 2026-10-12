@@ -86,10 +86,27 @@ export function formatApiError(error: unknown, fallback = 'Request failed'): str
   return fallback
 }
 
+/** Auth0 silent token can hang; never block tool/chat requests on it. */
+const TOKEN_WAIT_MS = 2000
+
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => resolve(undefined), ms)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
 async function headers(): Promise<HeadersInit> {
   if (!tokenGetter) return {}
   try {
-    const token = await tokenGetter()
+    const token = await withTimeout(tokenGetter(), TOKEN_WAIT_MS)
     return token ? { Authorization: `Bearer ${token}` } : {}
   } catch {
     return {}
