@@ -232,12 +232,13 @@ export function App() {
   async function onRun(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selected) return
+    // Capture before any await — React nulls event.currentTarget after yield.
+    const formEl = event.currentTarget
     if (LLM_TOOL_IDS.has(selected.id)) {
       if (!(await ensureAuth())) return
     }
     setBusy(true)
     setError('')
-    const formEl = event.currentTarget
     try {
       let result
       try {
@@ -282,10 +283,12 @@ export function App() {
     event.preventDefault()
     const text = draft.trim()
     if (!text || busy) return
+    // Capture before any await — React nulls event.currentTarget after yield.
+    const formEl = event.currentTarget
     if (!(await ensureAuth())) return
     setDraft('')
     setChat((items) => [...items, { role: 'user', text }])
-    const form = new FormData(event.currentTarget)
+    const form = new FormData(formEl)
     form.set('message', text)
     form.set('language', lang)
     chatAbortRef.current?.abort()
