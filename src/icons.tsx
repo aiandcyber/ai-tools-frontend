@@ -1,12 +1,12 @@
 export const CATEGORIES = ['search', 'pdf', 'office', 'image', 'media', 'utility', 'ai'] as const
 
 /** Top category tabs — AI is home (shows search). No separate Search tab. */
-export const NAV_CATEGORIES = ['ai', 'media', 'pdf', 'office', 'image', 'utility'] as const
+export const NAV_CATEGORIES = ['ai', 'media', 'pdf', 'office', 'image', 'utility', 'help'] as const
 
 export type CategoryId = (typeof CATEGORIES)[number]
 export type NavCategoryId = (typeof NAV_CATEGORIES)[number]
 
-export const CATEGORY_META: Record<CategoryId, { accent: string; soft: string }> = {
+export const CATEGORY_META: Record<CategoryId | 'help', { accent: string; soft: string }> = {
   search: { accent: '#0e7490', soft: '#cffafe' },
   pdf: { accent: '#0f766e', soft: '#ccfbf1' },
   office: { accent: '#1d4ed8', soft: '#dbeafe' },
@@ -14,9 +14,10 @@ export const CATEGORY_META: Record<CategoryId, { accent: string; soft: string }>
   media: { accent: '#FF0000', soft: '#ffe4e4' },
   utility: { accent: '#155e75', soft: '#e0f2fe' },
   ai: { accent: '#115e59', soft: '#a7f3d0' },
+  help: { accent: '#b45309', soft: '#ffedd5' },
 }
 
-export function CategoryIcon({ id }: { id: CategoryId }) {
+export function CategoryIcon({ id }: { id: CategoryId | 'help' }) {
   const stroke = 'currentColor'
   const common = { fill: 'none', stroke, strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   if (id === 'search') {
@@ -65,6 +66,14 @@ export function CategoryIcon({ id }: { id: CategoryId }) {
       <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
         <path {...common} d="M14.7 6.3a4 4 0 0 0-5.6 5.6L3 18v3h3l6.1-6.1" />
         <path {...common} d="M16 4l4 4" />
+      </svg>
+    )
+  }
+  if (id === 'help') {
+    return (
+      <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+        <path {...common} d="M5 17V8a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v5a4 4 0 0 1-4 4H9l-4 4z" />
+        <path {...common} d="M12 8v5M9.5 10.5h5" />
       </svg>
     )
   }

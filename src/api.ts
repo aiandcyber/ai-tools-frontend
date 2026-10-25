@@ -98,8 +98,10 @@ export function formatYoutubeError(error: unknown): string {
 
 export async function submitFeedback(payload: {
   email: string
+  topic: string
   youtube_url: string
   message: string
+  'cf-turnstile-response'?: string
 }): Promise<void> {
   const response = await apiFetch(apiUrl('/api/feedback'), {
     method: 'POST',
@@ -110,7 +112,15 @@ export async function submitFeedback(payload: {
     body: JSON.stringify(payload),
   })
   const result = await response.json().catch(() => ({ detail: response.statusText }))
-  if (!response.ok) throw new Error(result.detail || 'Could not send the message')
+  if (!response.ok) {
+    const detail = result.detail
+    const text = typeof detail === 'string'
+      ? detail
+      : Array.isArray(detail)
+        ? detail.map((item: { msg?: string }) => item?.msg).filter(Boolean).join(' ')
+        : ''
+    throw new Error(text || 'Could not send the message')
+  }
 }
 
 /** Auth0 silent token can hang; never block tool/chat requests on it. */

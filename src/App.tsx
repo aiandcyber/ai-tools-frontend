@@ -20,7 +20,7 @@ import { useOptionalAuth } from './auth'
 import { ContactPage } from './ContactPage'
 import { apiUrl, portalUrl } from './config'
 import { useRequireAuth } from './useRequireAuth'
-import { CATEGORIES, CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type CategoryId } from './icons'
+import { CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type NavCategoryId } from './icons'
 import { LANGS, languageOptionLabel, speechLang, t, type Lang } from './i18n'
 import { PROFILE_CODES, WORLD_REGIONS, regionLabel } from './regions'
 
@@ -108,7 +108,9 @@ export function App() {
   const ensureAuth = useRequireAuth()
   const [lang, setLang] = useState<Lang>(browserLang)
   const [tools, setTools] = useState<Tool[]>([])
-  const [category, setCategory] = useState<CategoryId>('ai')
+  const [category, setCategory] = useState<NavCategoryId>(() => (
+    window.location.pathname === '/contact' ? 'help' : 'ai'
+  ))
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Tool | null>(null)
   const [message, setMessage] = useState('')
@@ -129,9 +131,14 @@ export function App() {
   const [docFormat, setDocFormat] = useState('docx')
   const [docTemplate, setDocTemplate] = useState('')
   const [exportBusy, setExportBusy] = useState(false)
-  const [page, setPage] = useState<'tools' | 'contact'>(() => (
-    window.location.pathname === '/contact' ? 'contact' : 'tools'
-  ))
+  const [contactPrefill, setContactPrefill] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    const url = params.get('url') || ''
+    return {
+      url,
+      topic: params.get('topic') || (url ? 'youtube' : 'new_tool'),
+    }
+  })
   const [assistantWidth, setAssistantWidth] = useState(() => {
     const saved = Number(localStorage.getItem('tools-assistant-width') || '420')
     return Number.isFinite(saved) ? Math.min(720, Math.max(300, saved)) : 420
@@ -146,22 +153,32 @@ export function App() {
   }, [lang])
 
   useEffect(() => {
-    const onPop = () => setPage(window.location.pathname === '/contact' ? 'contact' : 'tools')
+    const onPop = () => {
+      if (window.location.pathname === '/contact') {
+        const params = new URLSearchParams(window.location.search)
+        const url = params.get('url') || ''
+        setContactPrefill({
+          url,
+          topic: params.get('topic') || (url ? 'youtube' : 'new_tool'),
+        })
+        setCategory('help')
+        setSelected(null)
+        return
+      }
+      setCategory((current) => (current === 'help' ? 'ai' : current))
+    }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
 
   function openContact(youtubeUrl = '') {
-    const next = youtubeUrl
-      ? `/contact?url=${encodeURIComponent(youtubeUrl)}`
-      : '/contact'
-    window.history.pushState({}, '', next)
-    setPage('contact')
-  }
-
-  function openTools() {
-    window.history.pushState({}, '', '/')
-    setPage('tools')
+    const params = new URLSearchParams()
+    params.set('topic', 'youtube')
+    if (youtubeUrl) params.set('url', youtubeUrl)
+    window.history.pushState({}, '', `/contact?${params}`)
+    setContactPrefill({ url: youtubeUrl, topic: 'youtube' })
+    setCategory('help')
+    setSelected(null)
   }
 
   useEffect(() => {
@@ -235,11 +252,11 @@ export function App() {
     return tools.filter((tool) => tool.category === category)
   }, [tools, category, query])
 
-  function categoryLabel(id: CategoryId | string): string {
+  function categoryLabel(id: NavCategoryId | string): string {
     return t(lang, id)
   }
 
-  function pickCategory(id: CategoryId) {
+  function pickCategory(id: NavCategoryId) {
     setCategory(id)
     setMessage('')
     setError('')
@@ -247,6 +264,15 @@ export function App() {
     setSearchMeta({})
     setDownloads([])
     setOpenInfoId(null)
+    if (id === 'help') {
+      window.history.pushState({}, '', '/contact')
+      setContactPrefill({ url: '', topic: 'new_tool' })
+      setSelected(null)
+      return
+    }
+    if (window.location.pathname === '/contact') {
+      window.history.pushState({}, '', '/')
+    }
     if (id === 'ai') {
       setSelected(tools.find((tool) => tool.id === 'web_search') ?? tools.find((tool) => tool.category === 'ai') ?? null)
       return
@@ -432,9 +458,6 @@ export function App() {
               {LANGS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
             </select>
           </label>
-          <button type="button" className="btn-secondary" onClick={() => openContact()}>
-            {t(lang, 'contactUs')}
-          </button>
           {auth.configured && (
             <button
               type="button"
@@ -447,14 +470,6 @@ export function App() {
         </div>
       </header>
 
-      {page === 'contact' ? (
-        <ContactPage
-          lang={lang}
-          initialYoutubeUrl={new URLSearchParams(window.location.search).get('url') || ''}
-          onBack={openTools}
-        />
-      ) : (
-      <>
       <section className="category-band">
         <div className="category-grid" role="tablist" aria-label="Tool categories">
           {NAV_CATEGORIES.map((id) => {
@@ -484,7 +499,8 @@ export function App() {
         </div>
       </section>
 
-      <div className="workspace" style={{ ['--assistant-width' as string]: `${assistantWidth}px` }}>
+      <div className={`workspace${category === 'help' ? ' need-tool' : ''}`} style={{ ['--assistant-width' as string]: `${assistantWidth}px` }}>
+        {category !== 'help' && (
         <aside className="catalog">
           <div className="catalog-head" style={{ borderColor: accent.accent }}>
             <ToolGlyph category={category} />
@@ -505,8 +521,8 @@ export function App() {
                     onClick={() => {
                       setSelected(tool)
                       if (tool.category === 'search') setCategory('ai')
-                      else if (CATEGORIES.includes(tool.category as CategoryId)) {
-                        setCategory(tool.category as CategoryId)
+                      else if (NAV_CATEGORIES.includes(tool.category as NavCategoryId)) {
+                        setCategory(tool.category as NavCategoryId)
                       }
                       setMessage('')
                       setError('')
@@ -542,10 +558,18 @@ export function App() {
           </ul>
           {loadError && <p className="error">{loadError}</p>}
         </aside>
+        )}
 
-        <main className="panel">
-          {!selected && <p className="empty">{t(lang, 'empty')}</p>}
-          {selected && selected.id === 'web_search' && (
+        <main className={`panel${category === 'help' ? ' need-tool' : ''}`}>
+          {category === 'help' && (
+            <ContactPage
+              lang={lang}
+              initialYoutubeUrl={contactPrefill.url}
+              initialTopic={contactPrefill.topic}
+            />
+          )}
+          {category !== 'help' && !selected && <p className="empty">{t(lang, 'empty')}</p>}
+          {category !== 'help' && selected && selected.id === 'web_search' && (
             <form
               key={selected.id}
               className={`google-search${searchHits.length ? ' has-results' : ''}`}
@@ -639,7 +663,7 @@ export function App() {
               <SearchResults items={searchHits} />
             </form>
           )}
-          {selected && selected.id !== 'web_search' && selected.id === 'translate' && (
+          {category !== 'help' && selected && selected.id !== 'web_search' && selected.id === 'translate' && (
             <form key={selected.id} className="tool-form translate-form" onSubmit={onRun}>
               <div className="tool-hero">
                 <ToolGlyph category={selected.category} />
@@ -702,7 +726,7 @@ export function App() {
               </div>
             </form>
           )}
-          {selected && (selected.id === 'youtube_mp4' || selected.id === 'youtube_mp3') && (
+          {category !== 'help' && selected && (selected.id === 'youtube_mp4' || selected.id === 'youtube_mp3') && (
             <YoutubeToolForm
               tool={selected}
               kind={selected.id === 'youtube_mp3' ? 'mp3' : 'mp4'}
@@ -720,7 +744,7 @@ export function App() {
               onSubmit={onRun}
             />
           )}
-          {selected && selected.id !== 'web_search' && selected.id !== 'translate'
+          {category !== 'help' && selected && selected.id !== 'web_search' && selected.id !== 'translate'
             && selected.id !== 'summarize' && selected.id !== 'rewrite' && selected.id !== 'generate_document'
             && selected.id !== 'youtube_mp4' && selected.id !== 'youtube_mp3' && (
             <form key={selected.id} className="tool-form modern-tool" onSubmit={onRun}>
@@ -780,7 +804,7 @@ export function App() {
               <DownloadList items={downloads} />
             </form>
           )}
-          {selected && (selected.id === 'summarize' || selected.id === 'rewrite') && (
+          {category !== 'help' && selected && (selected.id === 'summarize' || selected.id === 'rewrite') && (
             <form key={selected.id} className="tool-form modern-tool" onSubmit={onRun}>
               <div className="tool-hero">
                 <ToolGlyph category={selected.category} />
@@ -837,7 +861,7 @@ export function App() {
               ) : null}
             </form>
           )}
-          {selected && selected.id === 'generate_document' && (
+          {category !== 'help' && selected && selected.id === 'generate_document' && (
             <form key={selected.id} className="tool-form modern-tool" onSubmit={onRun}>
               <div className="tool-hero">
                 <ToolGlyph category={selected.category} />
@@ -938,8 +962,6 @@ export function App() {
           </form>
         </aside>
       </div>
-      </>
-      )}
     </div>
   )
 }

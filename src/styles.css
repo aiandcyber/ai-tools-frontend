@@ -168,9 +168,9 @@ button { cursor: pointer; }
 
 .category-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0.55rem;
-  max-width: 1080px;
+  max-width: 1240px;
   margin: 0 auto;
 }
 
@@ -387,6 +387,28 @@ button { cursor: pointer; }
 .search-title { font-size: 1.15rem; font-weight: 700; color: #0f766e; }
 .search-snippet { color: var(--muted); font-size: 0.98rem; }
 
+.workspace.need-tool {
+  grid-template-columns: minmax(0, 1fr) 10px var(--assistant-width, 420px);
+}
+.workspace.need-tool .panel {
+  border-left: 1px solid var(--line);
+  border-radius: 1.2rem 0 0 1.2rem;
+}
+.panel.need-tool {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+.need-tool-form {
+  width: min(36rem, 100%);
+  margin: 1.2rem auto 0;
+}
+.contact-captcha {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  font-weight: 600;
+}
 .workspace {
   flex: 1 1 auto;
   display: grid;
@@ -863,26 +885,6 @@ button { cursor: pointer; }
   text-decoration: underline;
   cursor: pointer;
 }
-.contact-page {
-  flex: 1;
-  overflow: auto;
-  padding: 1.25rem 1rem 2rem;
-}
-.contact-card {
-  max-width: 36rem;
-  margin: 0 auto;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 1.25rem;
-}
-.contact-card h1 {
-  font-family: "Fraunces", Georgia, serif;
-  margin: 0.85rem 0 0.4rem;
-  color: #134e4a;
-}
-.contact-lead { color: var(--muted); margin: 0 0 1rem; }
 .contact-form {
   display: flex;
   flex-direction: column;
@@ -890,6 +892,7 @@ button { cursor: pointer; }
 }
 .contact-form label { display: flex; flex-direction: column; gap: 0.35rem; font-weight: 600; }
 .contact-form input,
+.contact-form select,
 .contact-form textarea {
   font-weight: 400;
   padding: 0.8rem 0.9rem;
@@ -1046,7 +1049,8 @@ button { cursor: pointer; }
     grid-template-columns: repeat(3, minmax(0, 1fr));
     max-width: none;
   }
-  .workspace {
+  .workspace,
+  .workspace.need-tool {
     grid-template-columns: 1fr;
     height: auto;
     overflow: visible;
