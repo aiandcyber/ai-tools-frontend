@@ -346,13 +346,65 @@ button { cursor: pointer; }
 
 .search-meta .pill.region { background: #fef3c7; color: #92400e; }
 .search-meta .pill.soft { background: #f1f5f9; color: #475569; }
+.search-meta .pill.saved { background: #dcfce7; color: #166534; }
+.search-meta .pill.unsure { background: #ffe4e6; color: #9f1239; }
 .search-warn { color: #9f1239; font-size: 0.88rem; }
 
-.search-results {
+.search-rec {
   width: min(760px, 100%);
+  padding: 0.95rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: #f0fdfa;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  align-items: flex-start;
+}
+.search-rec.unsure { background: #fff7ed; }
+.search-rec p {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.45;
+  color: #134e4a;
+}
+.search-rec .btn-ghost {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #9f1239;
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.search-rec .btn-ghost:disabled { opacity: 0.6; cursor: wait; }
+
+.search-controls input[name="barcode"] {
+  min-width: 12rem;
+  margin-top: 0;
+}
+
+.search-web-label {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.search-results-wrap {
+  width: min(760px, 100%);
+  margin: 0.4rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.search-results {
+  width: 100%;
   list-style: none;
   padding: 0;
-  margin: 0.4rem 0 0;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 0.7rem;

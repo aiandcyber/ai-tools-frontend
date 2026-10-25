@@ -43,15 +43,31 @@ export type SearchHit = {
   thumbnail?: string
 }
 
+export type KnowledgeNode = {
+  id?: string
+  type?: string
+  name?: string
+  url?: string
+  extract?: string
+  confidence?: number
+  status?: string
+}
+
 export type SearchMeta = {
   mode?: string
   region?: string
   region_label?: string
+  graph_region?: string
   language?: string
   categories?: string[]
   unresponsive?: { engine?: string; reason?: string; category?: string; error?: string }[]
   total_unique?: number
   profile?: { interests?: string[]; industry?: string; location?: string }
+  confidence?: number
+  saved?: boolean
+  ask_if_wrong?: boolean
+  report_unidentified?: boolean
+  knowledge?: KnowledgeNode | null
 }
 
 let tokenGetter: (() => Promise<string>) | null = null
@@ -250,6 +266,48 @@ export async function fetchCatalog(signal?: AbortSignal): Promise<Catalog> {
     throw new Error(userHttpError(response.status, payload.detail))
   }
   return response.json()
+}
+
+export async function runSearch(body: {
+  query: string
+  mode?: string
+  region?: string
+  language?: string
+  location?: string
+  barcode?: string
+}): Promise<{ message: string; results: SearchHit[]; meta: SearchMeta }> {
+  const response = await apiFetch(apiUrl('/api/search'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await headers()),
+    },
+    body: JSON.stringify(body),
+  })
+  const payload = await response.json().catch(() => ({ detail: response.statusText }))
+  if (!response.ok) throw new Error(userHttpError(response.status, payload.detail, 'Could not search. Please try again.'))
+  return {
+    message: payload.message || '',
+    results: payload.results || [],
+    meta: payload.meta || {},
+  }
+}
+
+export async function rejectSearchPerson(nodeId: string): Promise<{ message: string; knowledge?: KnowledgeNode }> {
+  const response = await apiFetch(apiUrl('/api/search/people/reject'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await headers()),
+    },
+    body: JSON.stringify({ node_id: nodeId }),
+  })
+  const payload = await response.json().catch(() => ({ detail: response.statusText }))
+  if (!response.ok) throw new Error(userHttpError(response.status, payload.detail, 'Could not update that person. Please try again.'))
+  return {
+    message: payload.message || '',
+    knowledge: payload.knowledge,
+  }
 }
 
 export async function runTool(

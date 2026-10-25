@@ -6,6 +6,8 @@ import {
   formatYoutubeError,
   isBackendUnreachable,
   probeYoutube,
+  rejectSearchPerson,
+  runSearch,
   runTool,
   sendChat,
   synthesizeSpeech,
@@ -23,7 +25,7 @@ import { apiUrl, portalUrl } from './config'
 import { useRequireAuth } from './useRequireAuth'
 import { CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type NavCategoryId } from './icons'
 import { LANGS, languageOptionLabel, speechLang, t, type Lang } from './i18n'
-import { PROFILE_CODES, WORLD_REGIONS, regionLabel } from './regions'
+import { WORLD_REGIONS, regionLabel } from './regions'
 
 type Rec = {
   lang: string
@@ -131,6 +133,8 @@ export function App() {
   const [regionMode, setRegionMode] = useState<'auto' | 'manual'>('auto')
   const [regionChoice, setRegionChoice] = useState('SG')
   const [regionCustom, setRegionCustom] = useState('')
+  const [searchKind, setSearchKind] = useState('auto')
+  const [rejectBusy, setRejectBusy] = useState(false)
   const [docFormat, setDocFormat] = useState('docx')
   const [docTemplate, setDocTemplate] = useState('')
   const [exportBusy, setExportBusy] = useState(false)
@@ -283,6 +287,7 @@ export function App() {
     setError('')
     setSearchHits([])
     setSearchMeta({})
+    setSearchKind('auto')
     setDownloads([])
     setOpenInfoId(null)
     if (id === 'help') {
@@ -349,6 +354,60 @@ export function App() {
       setSearchMeta({})
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function onSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const query = String(form.get('query') || '').trim()
+    const barcode = String(form.get('barcode') || '').trim()
+    if (!query && !barcode) {
+      setError(t(lang, 'searchNeedQuery'))
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      const result = await runSearch({
+        query,
+        mode: String(form.get('mode') || searchKind || 'auto'),
+        region: String(form.get('region') || ''),
+        language: String(form.get('language') || lang),
+        location: String(form.get('location') || ''),
+        barcode,
+      })
+      setMessage(result.message)
+      setSearchHits(result.results || [])
+      setSearchMeta(result.meta || {})
+    } catch (exc) {
+      setError(formatApiError(exc))
+      setSearchHits([])
+      setSearchMeta({})
+      setMessage('')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onWrongPerson() {
+    const nodeId = searchMeta.knowledge?.id
+    if (!nodeId) return
+    setRejectBusy(true)
+    setError('')
+    try {
+      const result = await rejectSearchPerson(nodeId)
+      setMessage(result.message)
+      setSearchMeta((prev) => ({
+        ...prev,
+        saved: false,
+        ask_if_wrong: false,
+        knowledge: result.knowledge || { ...prev.knowledge, status: 'rejected' },
+      }))
+    } catch (exc) {
+      setError(formatApiError(exc))
+    } finally {
+      setRejectBusy(false)
     }
   }
 
@@ -611,10 +670,10 @@ export function App() {
           {category !== 'help' && category !== 'safety' && selected && selected.id === 'web_search' && (
             <form
               key={selected.id}
-              className={`google-search${searchHits.length ? ' has-results' : ''}`}
-              onSubmit={onRun}
+              className={`google-search${searchHits.length || message ? ' has-results' : ''}`}
+              onSubmit={onSearch}
             >
-              <h2>{selected.title}</h2>
+              <h2>{t(lang, 'searchCat')}</h2>
               <p className="search-subtitle">{t(lang, 'searchSubtitle')}</p>
               <div className="google-box">
                 <span className="google-icon" aria-hidden="true">
@@ -623,10 +682,15 @@ export function App() {
                 <input
                   name="query"
                   type="text"
-                  required
+                  required={searchKind !== 'product'}
                   autoFocus
-                  placeholder={t(lang, 'searchPlaceholder')}
-                  aria-label={selected.title}
+                  placeholder={
+                    searchKind === 'people' ? t(lang, 'searchPlaceholderPeople')
+                      : searchKind === 'product' ? t(lang, 'searchPlaceholderProduct')
+                        : searchKind === 'topic' ? t(lang, 'searchPlaceholderTopic')
+                          : t(lang, 'searchPlaceholder')
+                  }
+                  aria-label={t(lang, 'searchCat')}
                 />
                 <button type="submit" className="btn-primary" disabled={busy}>
                   {busy ? t(lang, 'working') : t(lang, 'searchAction')}
@@ -635,12 +699,29 @@ export function App() {
               <div className="search-controls">
                 <label>
                   {t(lang, 'searchMode')}
-                  <select name="mode" defaultValue="auto">
+                  <select
+                    name="mode"
+                    value={searchKind}
+                    onChange={(event) => setSearchKind(event.target.value)}
+                  >
                     <option value="auto">{t(lang, 'modeAuto')}</option>
-                    <option value="person">{t(lang, 'modePerson')}</option>
+                    <option value="people">{t(lang, 'modePeople')}</option>
+                    <option value="product">{t(lang, 'modeProduct')}</option>
                     <option value="topic">{t(lang, 'modeTopic')}</option>
                   </select>
                 </label>
+                {searchKind === 'product' ? (
+                  <label>
+                    {t(lang, 'barcode')}
+                    <input
+                      name="barcode"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder={t(lang, 'barcodePlaceholder')}
+                    />
+                  </label>
+                ) : null}
                 <label>
                   {t(lang, 'searchRegion')}
                   <select
@@ -680,7 +761,7 @@ export function App() {
                     <input
                       type="hidden"
                       name="region"
-                      value={regionCustom.trim() ? 'GLOBAL' : (PROFILE_CODES.has(regionChoice) ? regionChoice : 'GLOBAL')}
+                      value={regionCustom.trim() || regionChoice}
                     />
                     <input
                       type="hidden"
@@ -697,9 +778,23 @@ export function App() {
                 <input type="hidden" name="language" value={lang} />
               </div>
               {error && <p className="error">{error}</p>}
-              {message && <p className="ok">{t(lang, 'result')}: {message}</p>}
-              <SearchMetaBar meta={searchMeta} />
-              <SearchResults items={searchHits} />
+              <SearchMetaBar meta={searchMeta} lang={lang} />
+              {message ? (
+                <div className={`search-rec${searchMeta.report_unidentified ? ' unsure' : ''}`}>
+                  <p>{message}</p>
+                  {searchMeta.ask_if_wrong && searchMeta.knowledge?.id && searchMeta.knowledge?.status !== 'rejected' ? (
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      disabled={rejectBusy}
+                      onClick={() => void onWrongPerson()}
+                    >
+                      {t(lang, 'wrongPerson')}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              <SearchResults items={searchHits} heading={t(lang, 'webResults')} />
             </form>
           )}
           {category !== 'help' && category !== 'safety' && selected && selected.id !== 'web_search' && selected.id === 'translate' && (
@@ -1239,19 +1334,23 @@ function DownloadList({ items }: { items: Download[] }) {
   )
 }
 
-function SearchMetaBar({ meta }: { meta: SearchMeta }) {
-  if (!meta.mode && !meta.region_label) return null
+function SearchMetaBar({ meta, lang }: { meta: SearchMeta; lang: Lang }) {
+  if (!meta.mode && !meta.region_label && !meta.graph_region) return null
   const blocked = (meta.unresponsive || [])
     .filter((item) => item.engine)
     .slice(0, 4)
     .map((item) => `${item.engine}: ${item.reason || item.error || 'unavailable'}`)
+  const mode = meta.mode === 'person' ? 'people' : meta.mode
+  const modeLabel = mode === 'people' ? t(lang, 'modePeople')
+    : mode === 'product' ? t(lang, 'modeProduct')
+      : mode === 'topic' ? t(lang, 'modeTopic')
+        : t(lang, 'modeAuto')
   return (
     <div className="search-meta">
-      <span className="pill">{meta.mode || 'auto'}</span>
+      <span className="pill">{modeLabel}</span>
       {meta.region_label ? <span className="pill region">{meta.region_label}</span> : null}
-      {(meta.categories || []).map((category) => (
-        <span key={category} className="pill soft">{category}</span>
-      ))}
+      {meta.saved ? <span className="pill saved">{t(lang, 'saved')}</span> : null}
+      {meta.report_unidentified ? <span className="pill unsure">{t(lang, 'unidentified')}</span> : null}
       {blocked.length ? (
         <span className="search-warn" title={blocked.join('\n')}>
           Some engines unavailable
@@ -1261,10 +1360,12 @@ function SearchMetaBar({ meta }: { meta: SearchMeta }) {
   )
 }
 
-function SearchResults({ items }: { items: SearchHit[] }) {
+function SearchResults({ items, heading }: { items: SearchHit[]; heading?: string }) {
   if (!items.length) return null
   return (
-    <ol className="search-results">
+    <div className="search-results-wrap">
+      {heading ? <p className="search-web-label">{heading}</p> : null}
+      <ol className="search-results">
       {items.map((hit) => {
         const host = hit.host || (() => {
           try {
@@ -1289,6 +1390,7 @@ function SearchResults({ items }: { items: SearchHit[] }) {
           </li>
         )
       })}
-    </ol>
+      </ol>
+    </div>
   )
 }
