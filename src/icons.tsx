@@ -1,12 +1,12 @@
 export const CATEGORIES = ['search', 'pdf', 'office', 'image', 'media', 'utility', 'ai'] as const
 
 /** Top category tabs — AI is home (shows search). No separate Search tab. */
-export const NAV_CATEGORIES = ['ai', 'media', 'pdf', 'office', 'image', 'utility', 'help'] as const
+export const NAV_CATEGORIES = ['ai', 'safety', 'media', 'pdf', 'office', 'image', 'utility', 'help'] as const
 
 export type CategoryId = (typeof CATEGORIES)[number]
 export type NavCategoryId = (typeof NAV_CATEGORIES)[number]
 
-export const CATEGORY_META: Record<CategoryId | 'help', { accent: string; soft: string }> = {
+export const CATEGORY_META: Record<CategoryId | 'help' | 'safety', { accent: string; soft: string }> = {
   search: { accent: '#0e7490', soft: '#cffafe' },
   pdf: { accent: '#0f766e', soft: '#ccfbf1' },
   office: { accent: '#1d4ed8', soft: '#dbeafe' },
@@ -15,9 +15,10 @@ export const CATEGORY_META: Record<CategoryId | 'help', { accent: string; soft: 
   utility: { accent: '#155e75', soft: '#e0f2fe' },
   ai: { accent: '#115e59', soft: '#a7f3d0' },
   help: { accent: '#b45309', soft: '#ffedd5' },
+  safety: { accent: '#9f1239', soft: '#ffe4e6' },
 }
 
-export function CategoryIcon({ id }: { id: CategoryId | 'help' }) {
+export function CategoryIcon({ id }: { id: CategoryId | 'help' | 'safety' }) {
   const stroke = 'currentColor'
   const common = { fill: 'none', stroke, strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   if (id === 'search') {
@@ -66,6 +67,14 @@ export function CategoryIcon({ id }: { id: CategoryId | 'help' }) {
       <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
         <path {...common} d="M14.7 6.3a4 4 0 0 0-5.6 5.6L3 18v3h3l6.1-6.1" />
         <path {...common} d="M16 4l4 4" />
+      </svg>
+    )
+  }
+  if (id === 'safety') {
+    return (
+      <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+        <path {...common} d="M12 3l8 4v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z" />
+        <path {...common} d="M9 12l2 2 4-4" />
       </svg>
     )
   }

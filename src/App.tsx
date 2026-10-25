@@ -18,6 +18,7 @@ import {
 } from './api'
 import { useOptionalAuth } from './auth'
 import { ContactPage } from './ContactPage'
+import { ScanPage } from './ScanPage'
 import { apiUrl, portalUrl } from './config'
 import { useRequireAuth } from './useRequireAuth'
 import { CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type NavCategoryId } from './icons'
@@ -109,7 +110,9 @@ export function App() {
   const [lang, setLang] = useState<Lang>(browserLang)
   const [tools, setTools] = useState<Tool[]>([])
   const [category, setCategory] = useState<NavCategoryId>(() => (
-    window.location.pathname === '/contact' ? 'help' : 'ai'
+    window.location.pathname === '/contact' ? 'help'
+      : window.location.pathname === '/safety' ? 'safety'
+        : 'ai'
   ))
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Tool | null>(null)
@@ -165,7 +168,12 @@ export function App() {
         setSelected(null)
         return
       }
-      setCategory((current) => (current === 'help' ? 'ai' : current))
+      if (window.location.pathname === '/safety') {
+        setCategory('safety')
+        setSelected(null)
+        return
+      }
+      setCategory((current) => (current === 'help' || current === 'safety' ? 'ai' : current))
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
@@ -270,7 +278,12 @@ export function App() {
       setSelected(null)
       return
     }
-    if (window.location.pathname === '/contact') {
+    if (id === 'safety') {
+      window.history.pushState({}, '', '/safety')
+      setSelected(null)
+      return
+    }
+    if (window.location.pathname === '/contact' || window.location.pathname === '/safety') {
       window.history.pushState({}, '', '/')
     }
     if (id === 'ai') {
@@ -499,8 +512,8 @@ export function App() {
         </div>
       </section>
 
-      <div className={`workspace${category === 'help' ? ' need-tool' : ''}`} style={{ ['--assistant-width' as string]: `${assistantWidth}px` }}>
-        {category !== 'help' && (
+      <div className={`workspace${category === 'help' || category === 'safety' ? ' need-tool' : ''}`} style={{ ['--assistant-width' as string]: `${assistantWidth}px` }}>
+        {category !== 'help' && category !== 'safety' && (
         <aside className="catalog">
           <div className="catalog-head" style={{ borderColor: accent.accent }}>
             <ToolGlyph category={category} />
@@ -560,7 +573,8 @@ export function App() {
         </aside>
         )}
 
-        <main className={`panel${category === 'help' ? ' need-tool' : ''}`}>
+        <main className={`panel${category === 'help' || category === 'safety' ? ' need-tool' : ''}`}>
+          {category === 'safety' && <ScanPage lang={lang} />}
           {category === 'help' && (
             <ContactPage
               lang={lang}
@@ -569,8 +583,8 @@ export function App() {
               signedInEmail={auth.isAuthenticated ? auth.email : ''}
             />
           )}
-          {category !== 'help' && !selected && <p className="empty">{t(lang, 'empty')}</p>}
-          {category !== 'help' && selected && selected.id === 'web_search' && (
+          {category !== 'help' && category !== 'safety' && !selected && <p className="empty">{t(lang, 'empty')}</p>}
+          {category !== 'help' && category !== 'safety' && selected && selected.id === 'web_search' && (
             <form
               key={selected.id}
               className={`google-search${searchHits.length ? ' has-results' : ''}`}
@@ -664,7 +678,7 @@ export function App() {
               <SearchResults items={searchHits} />
             </form>
           )}
-          {category !== 'help' && selected && selected.id !== 'web_search' && selected.id === 'translate' && (
+          {category !== 'help' && category !== 'safety' && selected && selected.id !== 'web_search' && selected.id === 'translate' && (
             <form key={selected.id} className="tool-form translate-form" onSubmit={onRun}>
               <div className="tool-hero">
                 <ToolGlyph category={selected.category} />
@@ -727,7 +741,7 @@ export function App() {
               </div>
             </form>
           )}
-          {category !== 'help' && selected && (selected.id === 'youtube_mp4' || selected.id === 'youtube_mp3') && (
+          {category !== 'help' && category !== 'safety' && selected && (selected.id === 'youtube_mp4' || selected.id === 'youtube_mp3') && (
             <YoutubeToolForm
               tool={selected}
               kind={selected.id === 'youtube_mp3' ? 'mp3' : 'mp4'}
@@ -745,7 +759,7 @@ export function App() {
               onSubmit={onRun}
             />
           )}
-          {category !== 'help' && selected && selected.id !== 'web_search' && selected.id !== 'translate'
+          {category !== 'help' && category !== 'safety' && selected && selected.id !== 'web_search' && selected.id !== 'translate'
             && selected.id !== 'summarize' && selected.id !== 'rewrite' && selected.id !== 'generate_document'
             && selected.id !== 'youtube_mp4' && selected.id !== 'youtube_mp3' && (
             <form key={selected.id} className="tool-form modern-tool" onSubmit={onRun}>
@@ -805,7 +819,7 @@ export function App() {
               <DownloadList items={downloads} />
             </form>
           )}
-          {category !== 'help' && selected && (selected.id === 'summarize' || selected.id === 'rewrite') && (
+          {category !== 'help' && category !== 'safety' && selected && (selected.id === 'summarize' || selected.id === 'rewrite') && (
             <form key={selected.id} className="tool-form modern-tool" onSubmit={onRun}>
               <div className="tool-hero">
                 <ToolGlyph category={selected.category} />
@@ -862,7 +876,7 @@ export function App() {
               ) : null}
             </form>
           )}
-          {category !== 'help' && selected && selected.id === 'generate_document' && (
+          {category !== 'help' && category !== 'safety' && selected && selected.id === 'generate_document' && (
             <form key={selected.id} className="tool-form modern-tool" onSubmit={onRun}>
               <div className="tool-hero">
                 <ToolGlyph category={selected.category} />

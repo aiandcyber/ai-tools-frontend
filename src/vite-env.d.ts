@@ -7,6 +7,7 @@ interface ImportMetaEnv {
   readonly VITE_AUTH0_AUDIENCE?: string
   readonly VITE_AUTH_REQUIRED?: string
   readonly VITE_PORTAL_URL?: string
+  readonly VITE_SCAN_BASE?: string
 }
 
 interface ImportMeta {

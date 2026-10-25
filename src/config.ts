@@ -1,4 +1,6 @@
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
+/** Isolated virus-analysis VM. Browser POSTs here — not through Tools API. */
+export const SCAN_BASE = (import.meta.env.VITE_SCAN_BASE ?? '').replace(/\/$/, '')
 export const AUTH0_DOMAIN = (import.meta.env.VITE_AUTH0_DOMAIN ?? '').trim()
 export const AUTH0_CLIENT_ID = (import.meta.env.VITE_AUTH0_CLIENT_ID ?? '').trim()
 export const AUTH0_AUDIENCE = (import.meta.env.VITE_AUTH0_AUDIENCE ?? '').trim()

@@ -421,6 +421,29 @@ button { cursor: pointer; }
   width: 2.4rem;
   height: 2.4rem;
 }
+.scan-page {
+  width: min(44rem, 100%);
+  margin: 0.35rem auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.scan-page h2 { margin: 0; }
+.apps-chooser {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+}
+.apps-chooser h3 { margin: 0 0 0.4rem; }
+.apps-chooser ol { margin: 0; padding-left: 1.2rem; }
+.apps-chooser li { margin: 0.35rem 0; }
+.scan-verdict {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+}
 .contact-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
