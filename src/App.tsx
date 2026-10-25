@@ -119,7 +119,7 @@ export function App() {
   const [searchMeta, setSearchMeta] = useState<SearchMeta>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [chat, setChat] = useState<{ role: 'user' | 'assistant'; text: string }[]>([])
+  const [chat, setChat] = useState<{ role: 'user' | 'assistant'; text: string; notice?: boolean }[]>([])
   const [draft, setDraft] = useState('')
   const [speakReplies, setSpeakReplies] = useState(true)
   const [speaking, setSpeaking] = useState(false)
@@ -215,7 +215,7 @@ export function App() {
       {
         signal: controller.signal,
         onAttempt: (_attempt, error) => {
-          setLoadError(formatApiError(error) + ' Reconnecting…')
+          setLoadError(isBackendUnreachable(error) ? t(lang, 'reconnecting') : formatApiError(error))
         },
       },
     ).then((catalog) => {
@@ -229,7 +229,7 @@ export function App() {
       setSelected(first)
     }).catch((exc: Error) => {
       if (controller.signal.aborted || exc.name === 'AbortError' || /aborted/i.test(exc.message)) return
-      setLoadError(formatApiError(exc))
+      setLoadError(isBackendUnreachable(exc) ? t(lang, 'serviceUnavailable') : formatApiError(exc))
     })
     return () => controller.abort()
   }, [])
@@ -363,22 +363,22 @@ export function App() {
           signal: controller.signal,
           maxAttempts: 4,
           baseDelayMs: 1500,
-          onAttempt: (attempt, error) => {
+          onAttempt: (_attempt, error) => {
             if (!isBackendUnreachable(error)) return
             setChat((items) => {
               const next = [...items]
-              const notice = formatApiError(error) + ` Retry ${attempt}/3…`
-              if (next.length && next[next.length - 1]?.role === 'assistant' && next[next.length - 1].text.includes('Backend unreachable')) {
-                next[next.length - 1] = { role: 'assistant', text: notice }
+              const notice = { role: 'assistant' as const, text: t(lang, 'reconnecting'), notice: true }
+              if (next.length && next[next.length - 1]?.notice) {
+                next[next.length - 1] = notice
                 return next
               }
-              return [...next, { role: 'assistant', text: notice }]
+              return [...next, notice]
             })
           },
         },
       )
       setChat((items) => {
-        const withoutRetry = items.filter((item) => !(item.role === 'assistant' && item.text.includes('Backend unreachable')))
+        const withoutRetry = items.filter((item) => !item.notice)
         return [...withoutRetry, { role: 'assistant', text: result.reply }]
       })
       setDownloads(result.downloads)
@@ -391,7 +391,7 @@ export function App() {
         setChat((items) => [...items, { role: 'assistant', text: 'Stopped.' }])
       } else {
         setChat((items) => {
-          const withoutRetry = items.filter((item) => !(item.role === 'assistant' && item.text.includes('Backend unreachable')))
+          const withoutRetry = items.filter((item) => !item.notice)
           return [...withoutRetry, { role: 'assistant', text: formatApiError(exc) }]
         })
       }
@@ -413,7 +413,7 @@ export function App() {
     const ctor = (window as unknown as { SpeechRecognition?: new () => Rec; webkitSpeechRecognition?: new () => Rec }).SpeechRecognition
       || (window as unknown as { webkitSpeechRecognition?: new () => Rec }).webkitSpeechRecognition
     if (!ctor) {
-      setError('This browser has no speech recognition')
+      setError(t(lang, 'speechUnsupported'))
       return
     }
     const recognition = new ctor()

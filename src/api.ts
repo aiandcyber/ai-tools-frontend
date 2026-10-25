@@ -60,38 +60,86 @@ export function setAccessTokenGetter(getter: (() => Promise<string>) | null) {
   tokenGetter = getter
 }
 
+/** Shown when the service cannot be reached. Keep free of host/port/API wording. */
+export const SERVICE_UNAVAILABLE =
+  'This service is temporarily unavailable. Please try again in a moment.'
+export const SERVICE_RECONNECTING =
+  'This service is temporarily unavailable. We will keep trying.'
+export const GENERIC_ERROR = 'Something went wrong. Please try again.'
+
+function looksTechnical(message: string): boolean {
+  const msg = message.toLowerCase()
+  return (
+    msg.includes('<!doctype') ||
+    msg.includes('<html') ||
+    msg.includes('traceback') ||
+    msg.includes('uvicorn') ||
+    msg.includes('port 8000') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('networkerror') ||
+    msg.includes('network request failed') ||
+    msg.includes('backend unreachable') ||
+    msg.includes('internal server error') ||
+    msg.includes('bad gateway') ||
+    msg.includes('not running') ||
+    msg.includes('api not') ||
+    /^\s*\{/.test(message) ||
+    /^\s*</.test(message)
+  )
+}
+
+function asDetailText(detail: unknown): string {
+  if (typeof detail === 'string') return detail.trim()
+  if (Array.isArray(detail)) {
+    return detail.map((item: { msg?: string }) => item?.msg).filter(Boolean).join(' ').trim()
+  }
+  return ''
+}
+
 /** True when the browser could not reach the API (down, sandbox, CORS, offline). */
 export function isBackendUnreachable(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   const msg = error.message.toLowerCase()
   return (
     error.name === 'TypeError' ||
+    error.name === 'ApiUnreachableError' ||
     msg.includes('failed to fetch') ||
     msg.includes('networkerror') ||
     msg.includes('network request failed') ||
     msg.includes('load failed') ||
-    msg.includes('backend unreachable')
+    msg.includes('backend unreachable') ||
+    msg.includes('temporarily unavailable')
   )
 }
 
-/** User-facing message instead of the raw browser "Failed to fetch". */
-export function formatApiError(error: unknown, fallback = 'Request failed'): string {
-  if (isBackendUnreachable(error)) {
-    return (
-      'Backend unreachable (API not running or not reachable on this host). ' +
-      'Start the server on port 8000, then wait — this page will reconnect automatically.'
-    )
+/** User-facing message. Never expose host, port, stack traces, or HTML. */
+export function formatApiError(error: unknown, fallback = GENERIC_ERROR): string {
+  if (isBackendUnreachable(error)) return SERVICE_UNAVAILABLE
+  if (error instanceof Error && error.message.trim()) {
+    return looksTechnical(error.message) ? fallback : error.message.trim()
   }
-  if (error instanceof Error && error.message.trim()) return error.message
   return fallback
+}
+
+export function userHttpError(status: number, detail: unknown, fallback = GENERIC_ERROR): string {
+  if (status >= 500 || status === 0 || status === 408 || status === 429) return SERVICE_UNAVAILABLE
+  const text = asDetailText(detail)
+  if (status === 401 || status === 403) {
+    if (text && !looksTechnical(text)) return text
+    return 'Please sign in to continue.'
+  }
+  if (!text || looksTechnical(text)) return fallback
+  return text
 }
 
 export const YOUTUBE_BLOCKED =
   'YouTube is blocking your connection. Try later, or send a message to us to investigate.'
 
 export function formatYoutubeError(error: unknown): string {
+  if (isBackendUnreachable(error)) return SERVICE_UNAVAILABLE
   const msg = error instanceof Error ? error.message.trim() : String(error || '')
   const lower = msg.toLowerCase()
+  if (looksTechnical(msg)) return SERVICE_UNAVAILABLE
   if (lower.includes('paste a youtube') || lower.includes('must be a youtube')) return msg
   return YOUTUBE_BLOCKED
 }
@@ -113,13 +161,7 @@ export async function submitFeedback(payload: {
   })
   const result = await response.json().catch(() => ({ detail: response.statusText }))
   if (!response.ok) {
-    const detail = result.detail
-    const text = typeof detail === 'string'
-      ? detail
-      : Array.isArray(detail)
-        ? detail.map((item: { msg?: string }) => item?.msg).filter(Boolean).join(' ')
-        : ''
-    throw new Error(text || 'Could not send the message')
+    throw new Error(userHttpError(response.status, result.detail, 'Could not send the message'))
   }
 }
 
@@ -154,7 +196,9 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   try {
     return await fetch(input, init)
   } catch (error) {
-    throw new Error(formatApiError(error))
+    const err = new Error(formatApiError(error))
+    err.name = isBackendUnreachable(error) ? 'ApiUnreachableError' : 'Error'
+    throw err
   }
 }
 
@@ -201,7 +245,10 @@ export async function withBackendRetry<T>(
 
 export async function fetchCatalog(signal?: AbortSignal): Promise<Catalog> {
   const response = await apiFetch(apiUrl('/api/tools'), { signal })
-  if (!response.ok) throw new Error(await response.text())
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({ detail: '' }))
+    throw new Error(userHttpError(response.status, payload.detail))
+  }
   return response.json()
 }
 
@@ -211,7 +258,7 @@ export async function runTool(
 ): Promise<{ message: string; downloads: Download[]; results: SearchHit[]; meta: SearchMeta }> {
   const response = await apiFetch(apiUrl(`/api/tools/${id}`), { method: 'POST', body: form, headers: await headers() })
   const payload = await response.json().catch(() => ({ detail: response.statusText }))
-  if (!response.ok) throw new Error(payload.detail || 'Tool failed')
+  if (!response.ok) throw new Error(userHttpError(response.status, payload.detail, 'That tool could not be completed. Please try again.'))
   return {
     message: payload.message,
     downloads: payload.downloads || [],
@@ -231,7 +278,7 @@ export async function sendChat(
     signal,
   })
   const payload = await response.json().catch(() => ({ detail: response.statusText }))
-  if (!response.ok) throw new Error(payload.detail || 'Assistant failed')
+  if (!response.ok) throw new Error(userHttpError(response.status, payload.detail, 'The assistant could not reply. Please try again.'))
   return payload
 }
 
@@ -248,7 +295,7 @@ export async function exportGeneratedText(
     headers: await headers(),
   })
   const payload = await response.json().catch(() => ({ detail: response.statusText }))
-  if (!response.ok) throw new Error(payload.detail || 'Export failed')
+  if (!response.ok) throw new Error(userHttpError(response.status, payload.detail, 'Could not export. Please try again.'))
   return {
     message: payload.message || 'Exported',
     downloads: payload.downloads || [],
@@ -268,7 +315,7 @@ export async function synthesizeSpeech(text: string, language: string, signal?: 
   })
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ detail: response.statusText }))
-    throw new Error(payload.detail || 'TTS failed')
+    throw new Error(userHttpError(response.status, payload.detail, 'Could not play the spoken reply.'))
   }
   const blob = await response.blob()
   return URL.createObjectURL(blob)
@@ -291,6 +338,6 @@ export async function probeYoutube(
     signal,
   })
   const payload = await response.json().catch(() => ({ detail: response.statusText }))
-  if (!response.ok) throw new Error(payload.detail || 'Could not read video info')
+  if (!response.ok) throw new Error(userHttpError(response.status, payload.detail, 'Could not read that video. Please try again.'))
   return payload
 }

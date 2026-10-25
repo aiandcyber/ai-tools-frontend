@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { submitFeedback } from './api'
+import { formatApiError, submitFeedback } from './api'
 import { TURNSTILE_SITEKEY } from './config'
 import { CategoryIcon } from './icons'
 import { t, type Lang } from './i18n'
@@ -91,8 +91,8 @@ export function ContactPage({
         'expired-callback': () => setToken(''),
         'error-callback': () => setToken(''),
       })
-    }).catch((exc: Error) => {
-      if (!cancelled) setError(exc.message)
+    }).catch(() => {
+      if (!cancelled) setError(t(lang, 'somethingWrong'))
     })
     return () => {
       cancelled = true
@@ -130,7 +130,7 @@ export function ContactPage({
       setOk(true)
       setMessage('')
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : t(lang, 'contactFailed'))
+      setError(formatApiError(exc, t(lang, 'contactFailed')))
     } finally {
       resetCaptcha()
       setBusy(false)

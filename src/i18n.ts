@@ -56,6 +56,10 @@ const text: Record<Lang, Record<string, string>> = {
     contactCaptchaNeeded: 'Please complete the check before sending',
     youtubeSignInHint: 'The first conversion is free without signing in. After that, a simple Sign in is required. It is still free — Sign in is only to satisfy the YouTube backend requirement.',
     youtubeInvestigate: 'Send a message to us to investigate',
+    serviceUnavailable: 'This service is temporarily unavailable. Please try again in a moment.',
+    reconnecting: 'This service is temporarily unavailable. We will keep trying.',
+    somethingWrong: 'Something went wrong. Please try again.',
+    speechUnsupported: 'Voice input is not available in this browser.',
   },
   yue: {
     brand: 'Tools', portal: 'AI-for All', headline: 'Free AI Tools For All',
