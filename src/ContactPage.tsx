@@ -49,13 +49,16 @@ export function ContactPage({
   lang,
   initialYoutubeUrl = '',
   initialTopic = 'new_tool',
+  signedInEmail = '',
 }: {
   lang: Lang
   initialYoutubeUrl?: string
   initialTopic?: string
+  signedInEmail?: string
 }) {
+  const lockedEmail = signedInEmail.trim()
   const [topic, setTopic] = useState<Topic>(topicFrom(initialTopic))
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(lockedEmail)
   const [youtubeUrl, setYoutubeUrl] = useState(initialYoutubeUrl)
   const [message, setMessage] = useState('')
   const [token, setToken] = useState('')
@@ -71,6 +74,10 @@ export function ContactPage({
   }, [initialTopic, initialYoutubeUrl])
 
   useEffect(() => {
+    if (lockedEmail) setEmail(lockedEmail)
+  }, [lockedEmail])
+
+  useEffect(() => {
     if (!TURNSTILE_SITEKEY) return
     let cancelled = false
     void loadTurnstile().then((api) => {
@@ -79,6 +86,7 @@ export function ContactPage({
       widgetId.current = api.render(widgetHost.current, {
         sitekey: TURNSTILE_SITEKEY,
         action: TURNSTILE_ACTION,
+        size: 'compact',
         callback: (value: string) => setToken(value),
         'expired-callback': () => setToken(''),
         'error-callback': () => setToken(''),
@@ -140,28 +148,32 @@ export function ContactPage({
         <div>
           <h2>{t(lang, 'contactTitle')}</h2>
           <p>{t(lang, 'contactLead')}</p>
+          <p>{t(lang, 'contactLead2')}</p>
         </div>
       </div>
-      <label>
-        {t(lang, 'contactTopic')}
-        <select value={topic} onChange={(event) => setTopic(topicFrom(event.target.value))}>
-          <option value="new_tool">{t(lang, 'topicNewTool')}</option>
-          <option value="youtube">{t(lang, 'topicYoutube')}</option>
-          <option value="error">{t(lang, 'topicError')}</option>
-          <option value="feedback">{t(lang, 'topicFeedback')}</option>
-          <option value="contact">{t(lang, 'topicContact')}</option>
-        </select>
-      </label>
-      <label>
-        {t(lang, 'contactEmail')}
-        <input
-          type="email"
-          required
-          autoComplete="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-        />
-      </label>
+      <div className="contact-row">
+        <label>
+          {t(lang, 'contactTopic')}
+          <select value={topic} onChange={(event) => setTopic(topicFrom(event.target.value))}>
+            <option value="new_tool">{t(lang, 'topicNewTool')}</option>
+            <option value="youtube">{t(lang, 'topicYoutube')}</option>
+            <option value="error">{t(lang, 'topicError')}</option>
+            <option value="feedback">{t(lang, 'topicFeedback')}</option>
+            <option value="contact">{t(lang, 'topicContact')}</option>
+          </select>
+        </label>
+        <label>
+          {t(lang, 'contactEmail')}
+          <input
+            type="email"
+            required
+            autoComplete="email"
+            value={email}
+            readOnly={Boolean(lockedEmail)}
+            onChange={lockedEmail ? undefined : (event) => setEmail(event.target.value)}
+          />
+        </label>
+      </div>
       {showLink && (
         <label>
           {t(lang, 'contactYoutube')}
@@ -178,20 +190,17 @@ export function ContactPage({
         {t(lang, 'contactMessage')}
         <textarea
           required
-          rows={6}
+          rows={3}
           value={message}
           onChange={(event) => setMessage(event.target.value)}
         />
       </label>
-      {TURNSTILE_SITEKEY ? (
-        <div className="contact-captcha">
-          <span>{t(lang, 'contactCaptcha')}</span>
-          <div ref={widgetHost} />
-        </div>
-      ) : null}
-      <button type="submit" className="btn-primary" disabled={busy}>
-        {busy ? t(lang, 'working') : t(lang, 'contactSend')}
-      </button>
+      <div className="contact-actions">
+        {TURNSTILE_SITEKEY ? <div ref={widgetHost} className="contact-captcha" /> : null}
+        <button type="submit" className="btn-primary" disabled={busy}>
+          {busy ? t(lang, 'working') : t(lang, 'contactSend')}
+        </button>
+      </div>
       {error && <p className="error">{error}</p>}
       {ok && <p className="ok">{t(lang, 'contactSent')}</p>}
     </form>

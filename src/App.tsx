@@ -566,6 +566,7 @@ export function App() {
               lang={lang}
               initialYoutubeUrl={contactPrefill.url}
               initialTopic={contactPrefill.topic}
+              signedInEmail={auth.isAuthenticated ? auth.email : ''}
             />
           )}
           {category !== 'help' && !selected && <p className="empty">{t(lang, 'empty')}</p>}

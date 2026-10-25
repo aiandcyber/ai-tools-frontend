@@ -45,12 +45,13 @@ export function AuthShell({ children }: { children: ReactNode }) {
 
 export function useOptionalAuth() {
   if (!AUTH_CONFIGURED) {
-    return { configured: false, isAuthenticated: false, login: () => {}, logout: () => {} }
+    return { configured: false, isAuthenticated: false, email: '', login: () => {}, logout: () => {} }
   }
   const auth = useAuth0()
   return {
     configured: true,
     isAuthenticated: auth.isAuthenticated,
+    email: auth.user?.email ?? '',
     login: () => auth.loginWithRedirect({
       appState: { returnTo: window.location.pathname + window.location.search },
     }),
