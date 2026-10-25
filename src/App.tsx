@@ -26,6 +26,7 @@ import { useRequireAuth } from './useRequireAuth'
 import { CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type NavCategoryId } from './icons'
 import { LANGS, languageOptionLabel, speechLang, t, type Lang } from './i18n'
 import { WORLD_REGIONS, regionLabel } from './regions'
+import { SearchCapture, hitFromCode, type CaptureHit } from './SearchCapture'
 
 type Rec = {
   lang: string
@@ -134,6 +135,9 @@ export function App() {
   const [regionChoice, setRegionChoice] = useState('SG')
   const [regionCustom, setRegionCustom] = useState('')
   const [searchKind, setSearchKind] = useState('auto')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchBarcode, setSearchBarcode] = useState('')
+  const [captureOpen, setCaptureOpen] = useState(false)
   const [rejectBusy, setRejectBusy] = useState(false)
   const [docFormat, setDocFormat] = useState('docx')
   const [docTemplate, setDocTemplate] = useState('')
@@ -288,6 +292,9 @@ export function App() {
     setSearchHits([])
     setSearchMeta({})
     setSearchKind('auto')
+    setSearchQuery('')
+    setSearchBarcode('')
+    setCaptureOpen(false)
     setDownloads([])
     setOpenInfoId(null)
     if (id === 'help') {
@@ -357,11 +364,10 @@ export function App() {
     }
   }
 
-  async function onSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const form = new FormData(event.currentTarget)
-    const query = String(form.get('query') || '').trim()
-    const barcode = String(form.get('barcode') || '').trim()
+  async function doSearch(opts?: { query?: string; barcode?: string; mode?: string }) {
+    const query = (opts?.query ?? searchQuery).trim()
+    const barcode = (opts?.barcode ?? searchBarcode).trim()
+    const mode = opts?.mode ?? searchKind
     if (!query && !barcode) {
       setError(t(lang, 'searchNeedQuery'))
       return
@@ -371,10 +377,10 @@ export function App() {
     try {
       const result = await runSearch({
         query,
-        mode: String(form.get('mode') || searchKind || 'auto'),
-        region: String(form.get('region') || ''),
-        language: String(form.get('language') || lang),
-        location: String(form.get('location') || ''),
+        mode,
+        region: regionMode === 'manual' ? (regionCustom.trim() || regionChoice) : 'AUTO',
+        language: lang,
+        location: regionMode === 'manual' ? (regionCustom.trim() || regionLabel(regionChoice)) : '',
         barcode,
       })
       setMessage(result.message)
@@ -388,6 +394,50 @@ export function App() {
     } finally {
       setBusy(false)
     }
+  }
+
+  async function onSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await doSearch()
+  }
+
+  async function decodeImageFile(file: File): Promise<CaptureHit | null> {
+    const form = new FormData()
+    form.append('files', file)
+    for (const id of ['qr_scan', 'barcode_scan'] as const) {
+      try {
+        const result = await runTool(id, form)
+        const url = result.downloads[0]?.url
+        if (!url) continue
+        const text = (await (await fetch(apiUrl(url))).text()).trim()
+        if (text) return hitFromCode(text, id === 'barcode_scan' ? 'ean_13' : 'qr_code')
+      } catch {
+        // try the other decoder
+      }
+    }
+    return null
+  }
+
+  async function onCaptureHit(hit: CaptureHit) {
+    let resolved = hit
+    if (!resolved.query && !resolved.barcode && resolved.file) {
+      const fromTool = await decodeImageFile(resolved.file)
+      if (fromTool) resolved = { ...fromTool, file: resolved.file }
+    }
+    setCaptureOpen(false)
+    if (resolved.query || resolved.barcode) {
+      setSearchKind(resolved.mode)
+      setSearchQuery(resolved.query || '')
+      setSearchBarcode(resolved.barcode || '')
+      await doSearch({
+        query: resolved.query || '',
+        barcode: resolved.barcode || '',
+        mode: resolved.mode,
+      })
+      return
+    }
+    setSearchKind(resolved.mode)
+    setError(resolved.mode === 'people' ? t(lang, 'searchNeedName') : t(lang, 'searchNoCode'))
   }
 
   async function onWrongPerson() {
@@ -682,7 +732,9 @@ export function App() {
                 <input
                   name="query"
                   type="text"
-                  required={searchKind !== 'product'}
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  required={searchKind !== 'product' && !searchBarcode}
                   autoFocus
                   placeholder={
                     searchKind === 'people' ? t(lang, 'searchPlaceholderPeople')
@@ -692,17 +744,40 @@ export function App() {
                   }
                   aria-label={t(lang, 'searchCat')}
                 />
+                <button
+                  type="button"
+                  className="search-cam"
+                  aria-label={t(lang, 'searchCamera')}
+                  title={t(lang, 'searchCamera')}
+                  onClick={() => setCaptureOpen(true)}
+                >
+                  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                    <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+                    <circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+                  </svg>
+                </button>
                 <button type="submit" className="btn-primary" disabled={busy}>
                   {busy ? t(lang, 'working') : t(lang, 'searchAction')}
                 </button>
               </div>
+              {captureOpen ? (
+                <SearchCapture
+                  lang={lang}
+                  onClose={() => setCaptureOpen(false)}
+                  onHit={(hit) => void onCaptureHit(hit)}
+                />
+              ) : null}
               <div className="search-controls">
                 <label>
                   {t(lang, 'searchMode')}
                   <select
                     name="mode"
                     value={searchKind}
-                    onChange={(event) => setSearchKind(event.target.value)}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      setSearchKind(value)
+                      if (value !== 'product') setSearchBarcode('')
+                    }}
                   >
                     <option value="auto">{t(lang, 'modeAuto')}</option>
                     <option value="people">{t(lang, 'modePeople')}</option>
@@ -718,6 +793,8 @@ export function App() {
                       type="text"
                       inputMode="numeric"
                       autoComplete="off"
+                      value={searchBarcode}
+                      onChange={(event) => setSearchBarcode(event.target.value)}
                       placeholder={t(lang, 'barcodePlaceholder')}
                     />
                   </label>

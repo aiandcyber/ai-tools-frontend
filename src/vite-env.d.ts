@@ -13,3 +13,15 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+interface BarcodeDetector {
+  detect(image: ImageBitmapSource): Promise<{ rawValue: string; format: string }[]>
+}
+
+interface BarcodeDetectorConstructor {
+  new (options?: { formats?: string[] }): BarcodeDetector
+}
+
+interface Window {
+  BarcodeDetector?: BarcodeDetectorConstructor
+}
