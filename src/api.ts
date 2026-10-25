@@ -86,6 +86,33 @@ export function formatApiError(error: unknown, fallback = 'Request failed'): str
   return fallback
 }
 
+export const YOUTUBE_BLOCKED =
+  'YouTube is blocking your connection. Try later, or send a message to us to investigate.'
+
+export function formatYoutubeError(error: unknown): string {
+  const msg = error instanceof Error ? error.message.trim() : String(error || '')
+  const lower = msg.toLowerCase()
+  if (lower.includes('paste a youtube') || lower.includes('must be a youtube')) return msg
+  return YOUTUBE_BLOCKED
+}
+
+export async function submitFeedback(payload: {
+  email: string
+  youtube_url: string
+  message: string
+}): Promise<void> {
+  const response = await apiFetch(apiUrl('/api/feedback'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await headers()),
+    },
+    body: JSON.stringify(payload),
+  })
+  const result = await response.json().catch(() => ({ detail: response.statusText }))
+  if (!response.ok) throw new Error(result.detail || 'Could not send the message')
+}
+
 /** Auth0 silent token can hang; never block tool/chat requests on it. */
 const TOKEN_WAIT_MS = 2000
 

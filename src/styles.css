@@ -853,6 +853,49 @@ button { cursor: pointer; }
 }
 
 .error { color: #9f1239; font-weight: 600; }
+.linkish {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--sea);
+  font: inherit;
+  font-weight: 650;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.contact-page {
+  flex: 1;
+  overflow: auto;
+  padding: 1.25rem 1rem 2rem;
+}
+.contact-card {
+  max-width: 36rem;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.25rem;
+}
+.contact-card h1 {
+  font-family: "Fraunces", Georgia, serif;
+  margin: 0.85rem 0 0.4rem;
+  color: #134e4a;
+}
+.contact-lead { color: var(--muted); margin: 0 0 1rem; }
+.contact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.contact-form label { display: flex; flex-direction: column; gap: 0.35rem; font-weight: 600; }
+.contact-form input,
+.contact-form textarea {
+  font-weight: 400;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.95rem;
+}
 .ok { color: #14532d; font-weight: 600; }
 .empty { color: var(--muted); }
 

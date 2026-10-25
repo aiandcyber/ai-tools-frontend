@@ -3,6 +3,7 @@ import {
   exportGeneratedText,
   fetchCatalog,
   formatApiError,
+  formatYoutubeError,
   isBackendUnreachable,
   probeYoutube,
   runTool,
@@ -16,6 +17,7 @@ import {
   type YoutubeQuality,
 } from './api'
 import { useOptionalAuth } from './auth'
+import { ContactPage } from './ContactPage'
 import { apiUrl, portalUrl } from './config'
 import { useRequireAuth } from './useRequireAuth'
 import { CATEGORIES, CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type CategoryId } from './icons'
@@ -41,6 +43,8 @@ const LLM_TOOL_IDS = new Set([
   'classify',
   'stt',
 ])
+const YOUTUBE_TOOL_IDS = new Set(['youtube_mp4', 'youtube_mp3'])
+const YOUTUBE_USED_KEY = 'tools-youtube-used'
 
 function isSignInRequiredError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
@@ -125,6 +129,9 @@ export function App() {
   const [docFormat, setDocFormat] = useState('docx')
   const [docTemplate, setDocTemplate] = useState('')
   const [exportBusy, setExportBusy] = useState(false)
+  const [page, setPage] = useState<'tools' | 'contact'>(() => (
+    window.location.pathname === '/contact' ? 'contact' : 'tools'
+  ))
   const [assistantWidth, setAssistantWidth] = useState(() => {
     const saved = Number(localStorage.getItem('tools-assistant-width') || '420')
     return Number.isFinite(saved) ? Math.min(720, Math.max(300, saved)) : 420
@@ -137,6 +144,25 @@ export function App() {
     localStorage.setItem('tools-lang', lang)
     document.documentElement.lang = lang === 'zh' ? 'zh-Hans' : lang === 'yue' ? 'zh-HK' : lang
   }, [lang])
+
+  useEffect(() => {
+    const onPop = () => setPage(window.location.pathname === '/contact' ? 'contact' : 'tools')
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  function openContact(youtubeUrl = '') {
+    const next = youtubeUrl
+      ? `/contact?url=${encodeURIComponent(youtubeUrl)}`
+      : '/contact'
+    window.history.pushState({}, '', next)
+    setPage('contact')
+  }
+
+  function openTools() {
+    window.history.pushState({}, '', '/')
+    setPage('tools')
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -237,8 +263,17 @@ export function App() {
     if (LLM_TOOL_IDS.has(selected.id)) {
       if (!(await ensureAuth())) return
     }
+    if (YOUTUBE_TOOL_IDS.has(selected.id) && !auth.isAuthenticated) {
+      if (localStorage.getItem(YOUTUBE_USED_KEY) === '1') {
+        setError(t(lang, 'youtubeSignInHint'))
+        if (!(await ensureAuth())) return
+      }
+    }
     setBusy(true)
     setError('')
+    if (YOUTUBE_TOOL_IDS.has(selected.id)) {
+      localStorage.setItem(YOUTUBE_USED_KEY, '1')
+    }
     try {
       let result
       try {
@@ -257,7 +292,7 @@ export function App() {
       setSearchHits(result.results || [])
       setSearchMeta(result.meta || {})
     } catch (exc) {
-      setError(formatApiError(exc))
+      setError(YOUTUBE_TOOL_IDS.has(selected.id) ? formatYoutubeError(exc) : formatApiError(exc))
       setSearchHits([])
       setSearchMeta({})
     } finally {
@@ -397,6 +432,9 @@ export function App() {
               {LANGS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
             </select>
           </label>
+          <button type="button" className="btn-secondary" onClick={() => openContact()}>
+            {t(lang, 'contactUs')}
+          </button>
           {auth.configured && (
             <button
               type="button"
@@ -409,6 +447,14 @@ export function App() {
         </div>
       </header>
 
+      {page === 'contact' ? (
+        <ContactPage
+          lang={lang}
+          initialYoutubeUrl={new URLSearchParams(window.location.search).get('url') || ''}
+          onBack={openTools}
+        />
+      ) : (
+      <>
       <section className="category-band">
         <div className="category-grid" role="tablist" aria-label="Tool categories">
           {NAV_CATEGORIES.map((id) => {
@@ -668,6 +714,9 @@ export function App() {
               runLabel={t(lang, 'run')}
               workingLabel={t(lang, 'working')}
               resultLabel={t(lang, 'result')}
+              signInHint={t(lang, 'youtubeSignInHint')}
+              investigateLabel={t(lang, 'youtubeInvestigate')}
+              onInvestigate={(url) => openContact(url)}
               onSubmit={onRun}
             />
           )}
@@ -889,6 +938,8 @@ export function App() {
           </form>
         </aside>
       </div>
+      </>
+      )}
     </div>
   )
 }
@@ -918,6 +969,9 @@ function YoutubeToolForm({
   runLabel,
   workingLabel,
   resultLabel,
+  signInHint,
+  investigateLabel,
+  onInvestigate,
   onSubmit,
 }: {
   tool: Tool
@@ -930,6 +984,9 @@ function YoutubeToolForm({
   runLabel: string
   workingLabel: string
   resultLabel: string
+  signInHint: string
+  investigateLabel: string
+  onInvestigate: (url: string) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
   const urlField = tool.fields.find((field) => field.name === 'url')
@@ -980,7 +1037,7 @@ function YoutubeToolForm({
         .catch((exc) => {
           if (exc instanceof DOMException && exc.name === 'AbortError') return
           setQualities([])
-          setProbeError(exc instanceof Error ? exc.message : 'Could not read video info')
+          setProbeError(formatYoutubeError(exc))
         })
         .finally(() => setProbeBusy(false))
     }, 500)
@@ -995,7 +1052,7 @@ function YoutubeToolForm({
   let sizeText = 'Choose a quality to see expected file size.'
   if (!url.trim()) sizeText = 'Paste a YouTube URL, then choose quality to see expected file size.'
   else if (probeBusy) sizeText = 'Checking expected file size…'
-  else if (probeError) sizeText = probeError
+  else if (probeError) sizeText = 'Expected file size is unavailable until YouTube allows this video.'
   else if (sizeLabel) sizeText = `Expected file size: ${sizeLabel}`
   else if (qualities.length) sizeText = 'Expected file size: unknown until download.'
 
@@ -1033,10 +1090,18 @@ function YoutubeToolForm({
           <span className="field-hint">{sizeText}</span>
         </label>
       </div>
+      <p className="field-hint">{signInHint}</p>
       <button type="submit" className="btn-primary" disabled={busy} style={{ background: accent }}>
         {busy ? workingLabel : runLabel}
       </button>
-      {error && <p className="error">{error}</p>}
+      {(error || probeError) && (
+        <p className="error">
+          {error || probeError}{' '}
+          <button type="button" className="linkish" onClick={() => onInvestigate(url)}>
+            {investigateLabel}
+          </button>
+        </p>
+      )}
       {message && <p className="ok">{resultLabel}: {message}</p>}
       <DownloadList items={downloads} />
     </form>
