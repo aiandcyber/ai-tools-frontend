@@ -169,7 +169,7 @@ button { cursor: pointer; }
 .category-grid {
   display: grid;
   grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 0.5rem;
+  gap: 0.55rem;
   max-width: none;
   width: 100%;
   margin: 0;
@@ -180,8 +180,8 @@ button { cursor: pointer; }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.3rem;
-  padding: 0.65rem 0.35rem;
+  gap: 0.35rem;
+  padding: 0.75rem 0.45rem;
   border: 1px solid transparent;
   border-radius: 1.1rem;
   background: rgba(255, 255, 255, 0.86);
@@ -218,13 +218,13 @@ button { cursor: pointer; }
 
 .category-label {
   font-weight: 700;
-  font-size: 0.8rem;
-  line-height: 1.2;
+  font-size: 0.9rem;
+  line-height: 1.25;
   text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  hyphens: auto;
 }
 
 .home-card .category-label {
@@ -1083,12 +1083,9 @@ button { cursor: pointer; }
     gap: 0.55rem;
   }
   .category-grid {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     max-width: none;
   }
-  .category-card { min-height: 4.2rem; padding: 0.5rem 0.2rem; }
-  .category-icon { width: 2.3rem; height: 2.3rem; }
-  .category-label { font-size: 0.72rem; }
   .workspace,
   .workspace.need-tool {
     grid-template-columns: 1fr;
@@ -1121,7 +1118,7 @@ button { cursor: pointer; }
 
 @media (max-width: 640px) {
   :root { font-size: 16.5px; }
-  .category-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .category-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .category-card { min-height: 4.2rem; padding: 0.65rem 0.3rem; }
   .site-headline { font-size: 1.25rem; }
   .panel { padding: 0.95rem; }
