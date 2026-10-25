@@ -18,7 +18,7 @@ import {
 } from './api'
 import { useOptionalAuth } from './auth'
 import { ContactPage } from './ContactPage'
-import { ScanPage } from './ScanPage'
+import { ScanPage, safetyTools } from './ScanPage'
 import { apiUrl, portalUrl } from './config'
 import { useRequireAuth } from './useRequireAuth'
 import { CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type NavCategoryId } from './icons'
@@ -170,7 +170,6 @@ export function App() {
       }
       if (window.location.pathname === '/safety') {
         setCategory('safety')
-        setSelected(null)
         return
       }
       setCategory((current) => (current === 'help' || current === 'safety' ? 'ai' : current))
@@ -216,6 +215,14 @@ export function App() {
     stopSpeech()
   }, [])
 
+  const scanTools = useMemo(() => safetyTools(lang), [lang])
+
+  useEffect(() => {
+    if (category !== 'safety') return
+    if (selected?.category === 'safety') return
+    setSelected(scanTools[0] ?? null)
+  }, [category, selected, scanTools])
+
   useEffect(() => {
     const controller = new AbortController()
     void withBackendRetry(
@@ -234,7 +241,11 @@ export function App() {
         ?? catalog.tools.find((tool) => tool.category === 'search')
         ?? catalog.tools[0]
         ?? null
-      setSelected(first)
+      setSelected((current) => (
+        window.location.pathname === '/safety' || current?.category === 'safety'
+          ? (current?.category === 'safety' ? current : scanTools[0] ?? null)
+          : first
+      ))
     }).catch((exc: Error) => {
       if (controller.signal.aborted || exc.name === 'AbortError' || /aborted/i.test(exc.message)) return
       setLoadError(isBackendUnreachable(exc) ? t(lang, 'serviceUnavailable') : formatApiError(exc))
@@ -244,21 +255,23 @@ export function App() {
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
+    const all = [...tools, ...scanTools]
     // Site-wide tool search (title, description, id, category).
     if (needle) {
-      return tools.filter((tool) => (
+      return all.filter((tool) => (
         tool.title.toLowerCase().includes(needle)
         || tool.description.toLowerCase().includes(needle)
         || tool.id.toLowerCase().includes(needle)
         || tool.category.toLowerCase().includes(needle)
       ))
     }
+    if (category === 'safety') return scanTools
     // AI home: AI tools only (web search is the main panel default, not listed again).
     if (category === 'ai') {
       return tools.filter((tool) => tool.category === 'ai')
     }
     return tools.filter((tool) => tool.category === category)
-  }, [tools, category, query])
+  }, [tools, scanTools, category, query])
 
   function categoryLabel(id: NavCategoryId | string): string {
     return t(lang, id)
@@ -280,7 +293,7 @@ export function App() {
     }
     if (id === 'safety') {
       window.history.pushState({}, '', '/safety')
-      setSelected(null)
+      setSelected(scanTools[0] ?? null)
       return
     }
     if (window.location.pathname === '/contact' || window.location.pathname === '/safety') {
@@ -512,8 +525,8 @@ export function App() {
         </div>
       </section>
 
-      <div className={`workspace${category === 'help' || category === 'safety' ? ' need-tool' : ''}`} style={{ ['--assistant-width' as string]: `${assistantWidth}px` }}>
-        {category !== 'help' && category !== 'safety' && (
+      <div className={`workspace${category === 'help' ? ' need-tool' : ''}`} style={{ ['--assistant-width' as string]: `${assistantWidth}px` }}>
+        {category !== 'help' && (
         <aside className="catalog">
           <div className="catalog-head" style={{ borderColor: accent.accent }}>
             <ToolGlyph category={category} />
@@ -536,6 +549,10 @@ export function App() {
                       if (tool.category === 'search') setCategory('ai')
                       else if (NAV_CATEGORIES.includes(tool.category as NavCategoryId)) {
                         setCategory(tool.category as NavCategoryId)
+                        if (tool.category === 'safety') window.history.pushState({}, '', '/safety')
+                        else if (window.location.pathname === '/safety' || window.location.pathname === '/contact') {
+                          window.history.pushState({}, '', '/')
+                        }
                       }
                       setMessage('')
                       setError('')
@@ -573,8 +590,15 @@ export function App() {
         </aside>
         )}
 
-        <main className={`panel${category === 'help' || category === 'safety' ? ' need-tool' : ''}`}>
-          {category === 'safety' && <ScanPage lang={lang} />}
+        <main className={`panel${category === 'help' ? ' need-tool' : ''}`}>
+          {category === 'safety' && (
+            <ScanPage
+              key={selected?.id === 'scan_message' ? 'scan_message' : 'scan_file'}
+              lang={lang}
+              mode={selected?.id === 'scan_message' ? 'message' : 'file'}
+              accent={accent.accent}
+            />
+          )}
           {category === 'help' && (
             <ContactPage
               lang={lang}

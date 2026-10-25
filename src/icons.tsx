@@ -95,7 +95,13 @@ export function CategoryIcon({ id }: { id: CategoryId | 'help' | 'safety' }) {
 }
 
 export function ToolGlyph({ category }: { category: string }) {
-  const id = (CATEGORIES.includes(category as CategoryId) ? category : 'utility') as CategoryId
+  const id = (
+    category === 'safety' || category === 'help'
+      ? category
+      : CATEGORIES.includes(category as CategoryId)
+        ? category
+        : 'utility'
+  ) as CategoryId | 'help' | 'safety'
   return (
     <span className="tool-glyph" style={{ background: CATEGORY_META[id].soft, color: CATEGORY_META[id].accent }}>
       <CategoryIcon id={id} />
