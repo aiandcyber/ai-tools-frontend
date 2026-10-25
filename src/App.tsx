@@ -26,7 +26,7 @@ import { useRequireAuth } from './useRequireAuth'
 import { CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type NavCategoryId } from './icons'
 import { LANGS, languageOptionLabel, speechLang, t, type Lang } from './i18n'
 import { WORLD_REGIONS, regionLabel } from './regions'
-import { SearchCapture, hitFromCode, type CaptureHit } from './SearchCapture'
+import { SearchCapture, detectCodes, hitFromCode, type CaptureHit } from './SearchCapture'
 
 type Rec = {
   lang: string
@@ -137,7 +137,8 @@ export function App() {
   const [searchKind, setSearchKind] = useState('auto')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchBarcode, setSearchBarcode] = useState('')
-  const [captureOpen, setCaptureOpen] = useState(false)
+  const [captureTab, setCaptureTab] = useState<'scan' | 'photo' | null>(null)
+  const uploadRef = useRef<HTMLInputElement | null>(null)
   const [rejectBusy, setRejectBusy] = useState(false)
   const [docFormat, setDocFormat] = useState('docx')
   const [docTemplate, setDocTemplate] = useState('')
@@ -294,7 +295,7 @@ export function App() {
     setSearchKind('auto')
     setSearchQuery('')
     setSearchBarcode('')
-    setCaptureOpen(false)
+    setCaptureTab(null)
     setDownloads([])
     setOpenInfoId(null)
     if (id === 'help') {
@@ -418,13 +419,28 @@ export function App() {
     return null
   }
 
+  async function onUploadImage(file: File) {
+    try {
+      const bitmap = await createImageBitmap(file)
+      const codes = await detectCodes(bitmap)
+      bitmap.close()
+      if (codes[0]) {
+        await onCaptureHit({ ...hitFromCode(codes[0].rawValue, codes[0].format), file })
+        return
+      }
+    } catch {
+      // decode on the server instead
+    }
+    await onCaptureHit({ file, mode: 'product' })
+  }
+
   async function onCaptureHit(hit: CaptureHit) {
     let resolved = hit
     if (!resolved.query && !resolved.barcode && resolved.file) {
       const fromTool = await decodeImageFile(resolved.file)
       if (fromTool) resolved = { ...fromTool, file: resolved.file }
     }
-    setCaptureOpen(false)
+    setCaptureTab(null)
     if (resolved.query || resolved.barcode) {
       setSearchKind(resolved.mode)
       setSearchQuery(resolved.query || '')
@@ -726,9 +742,6 @@ export function App() {
               <h2>{t(lang, 'searchCat')}</h2>
               <p className="search-subtitle">{t(lang, 'searchSubtitle')}</p>
               <div className="google-box">
-                <span className="google-icon" aria-hidden="true">
-                  <CategoryIcon id="search" />
-                </span>
                 <input
                   name="query"
                   type="text"
@@ -744,26 +757,65 @@ export function App() {
                   }
                   aria-label={t(lang, 'searchCat')}
                 />
-                <button
-                  type="button"
-                  className="search-cam"
-                  aria-label={t(lang, 'searchCamera')}
-                  title={t(lang, 'searchCamera')}
-                  onClick={() => setCaptureOpen(true)}
-                >
-                  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-                    <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
-                    <circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-                  </svg>
-                </button>
+                <div className="search-actions">
+                  <input
+                    ref={uploadRef}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(event) => {
+                      const file = event.target.files?.[0]
+                      event.target.value = ''
+                      if (file) void onUploadImage(file)
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="search-cam"
+                    aria-label={t(lang, 'searchUpload')}
+                    title={t(lang, 'searchUpload')}
+                    onClick={() => uploadRef.current?.click()}
+                  >
+                    <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+                      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M14 3v5h5M12 18v-6M9 14l3-3 3 3" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="search-cam"
+                    aria-label={t(lang, 'searchScan')}
+                    title={t(lang, 'searchScan')}
+                    onClick={() => setCaptureTab('scan')}
+                  >
+                    <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+                      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3" />
+                      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" d="M7 12h10" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="search-cam"
+                    aria-label={t(lang, 'searchCamera')}
+                    title={t(lang, 'searchCamera')}
+                    onClick={() => setCaptureTab('photo')}
+                  >
+                    <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+                      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+                      <circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+                    </svg>
+                  </button>
+                </div>
                 <button type="submit" className="btn-primary" disabled={busy}>
                   {busy ? t(lang, 'working') : t(lang, 'searchAction')}
                 </button>
               </div>
-              {captureOpen ? (
+              {captureTab ? (
                 <SearchCapture
+                  key={captureTab}
                   lang={lang}
-                  onClose={() => setCaptureOpen(false)}
+                  initialTab={captureTab}
+                  onClose={() => setCaptureTab(null)}
                   onHit={(hit) => void onCaptureHit(hit)}
                 />
               ) : null}

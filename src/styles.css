@@ -266,7 +266,7 @@ button { cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  padding: 0.55rem 0.55rem 0.55rem 1rem;
+  padding: 0.55rem 0.55rem 0.55rem 1.15rem;
   border: 1px solid #d8dee6;
   border-radius: 999px;
   background: #fff;
@@ -276,17 +276,6 @@ button { cursor: pointer; }
 .google-box:focus-within {
   border-color: #0e7490;
   box-shadow: 0 8px 24px rgba(14, 116, 144, 0.18);
-}
-
-.google-icon {
-  color: #0e7490;
-  display: grid;
-  place-items: center;
-}
-
-.google-icon svg {
-  width: 24px;
-  height: 24px;
 }
 
 .google-box input {
@@ -306,10 +295,17 @@ button { cursor: pointer; }
   padding: 0.8rem 1.4rem;
 }
 
+.search-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.05rem;
+}
+
 .search-cam {
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   border: 0;
   border-radius: 50%;
   background: transparent;
@@ -319,6 +315,10 @@ button { cursor: pointer; }
   cursor: pointer;
 }
 .search-cam:hover { background: #ecfeff; }
+.search-cam svg {
+  width: 28px;
+  height: 28px;
+}
 
 .search-capture {
   position: fixed;

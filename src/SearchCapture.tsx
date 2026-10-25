@@ -47,10 +47,12 @@ export function hitFromCode(rawValue: string, format: string): CaptureHit {
 
 export function SearchCapture({
   lang,
+  initialTab = 'scan',
   onClose,
   onHit,
 }: {
   lang: Lang
+  initialTab?: Tab
   onClose: () => void
   onHit: (hit: CaptureHit) => void
 }) {
@@ -59,7 +61,7 @@ export function SearchCapture({
   const albumRef = useRef<HTMLInputElement | null>(null)
   const onHitRef = useRef(onHit)
   onHitRef.current = onHit
-  const [tab, setTab] = useState<Tab>('scan')
+  const [tab, setTab] = useState<Tab>(initialTab)
   const [facing, setFacing] = useState<'environment' | 'user'>('environment')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
