@@ -48,6 +48,7 @@ const LLM_TOOL_IDS = new Set([
   'stt',
 ])
 const YOUTUBE_TOOL_IDS = new Set(['youtube_mp4', 'youtube_mp3'])
+const HIDDEN_TOOL_IDS = new Set(['youtube_mp4', 'youtube_mp3'])
 const YOUTUBE_USED_KEY = 'tools-youtube-used'
 
 function isSignInRequiredError(error: unknown): boolean {
@@ -245,7 +246,7 @@ export function App() {
     ).then((catalog) => {
       if (controller.signal.aborted) return
       setLoadError('')
-      setTools(catalog.tools)
+      setTools(catalog.tools.filter((tool) => !HIDDEN_TOOL_IDS.has(tool.id)))
       const first = catalog.tools.find((tool) => tool.id === 'web_search')
         ?? catalog.tools.find((tool) => tool.category === 'search')
         ?? catalog.tools[0]
