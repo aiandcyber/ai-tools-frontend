@@ -1,15 +1,6 @@
 /** World regions / countries for manual search priority. */
 export type RegionOption = { code: string; label: string }
 
-/** Search location config. Change this list when locations change. */
-export const SEARCH_LOCATIONS: RegionOption[] = [
-  { code: 'IN', label: 'India' },
-  { code: 'HK', label: 'Hong Kong' },
-  { code: 'US', label: 'USA' },
-  { code: 'CN', label: 'China' },
-  { code: 'OTHER', label: 'Other' },
-]
-
 /** Curated profiles that get stronger ranking when selected. */
 export const PROFILE_REGIONS: RegionOption[] = [
   { code: 'SG', label: 'Singapore' },

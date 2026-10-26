@@ -25,7 +25,7 @@ import { apiUrl, portalUrl } from './config'
 import { useRequireAuth } from './useRequireAuth'
 import { CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type NavCategoryId } from './icons'
 import { LANGS, languageOptionLabel, speechLang, t, type Lang } from './i18n'
-import { SEARCH_LOCATIONS } from './regions'
+import { WORLD_REGIONS, regionLabel } from './regions'
 import { SearchCapture, detectCodes, hitFromCode, type CaptureHit } from './SearchCapture'
 
 type Rec = {
@@ -132,8 +132,10 @@ export function App() {
   const [speaking, setSpeaking] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [openInfoId, setOpenInfoId] = useState<string | null>(null)
-  const [regionChoice, setRegionChoice] = useState(SEARCH_LOCATIONS[0].code)
-  const [searchKind, setSearchKind] = useState('people')
+  const [regionMode, setRegionMode] = useState<'auto' | 'manual'>('auto')
+  const [regionChoice, setRegionChoice] = useState('SG')
+  const [regionCustom, setRegionCustom] = useState('')
+  const [searchKind, setSearchKind] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchBarcode, setSearchBarcode] = useState('')
   const [captureTab, setCaptureTab] = useState<'scan' | 'photo' | null>(null)
@@ -290,7 +292,7 @@ export function App() {
     setError('')
     setSearchHits([])
     setSearchMeta({})
-    setSearchKind('people')
+    setSearchKind('')
     setSearchQuery('')
     setSearchBarcode('')
     setCaptureTab(null)
@@ -381,9 +383,9 @@ export function App() {
       const result = await runSearch({
         query,
         mode,
-        region: regionChoice,
+        region: regionMode === 'manual' ? (regionCustom.trim() || regionChoice) : 'AUTO',
         language: lang,
-        location: regionChoice,
+        location: regionMode === 'manual' ? (regionCustom.trim() || regionLabel(regionChoice)) : '',
         barcode,
         confirm_add: opts?.confirm_add,
       })
@@ -445,18 +447,24 @@ export function App() {
     }
     setCaptureTab(null)
     if (resolved.query || resolved.barcode) {
-      setSearchKind(resolved.mode)
+      const mode = resolved.barcode ? 'product' : searchKind
+      if (!mode) {
+        setSearchQuery(resolved.query || '')
+        setSearchBarcode(resolved.barcode || '')
+        setError(t(lang, 'chooseSearchType'))
+        return
+      }
+      setSearchKind(mode)
       setSearchQuery(resolved.query || '')
       setSearchBarcode(resolved.barcode || '')
       await doSearch({
         query: resolved.query || '',
         barcode: resolved.barcode || '',
-        mode: resolved.mode,
+        mode,
       })
       return
     }
-    setSearchKind(resolved.mode)
-    setError(resolved.mode === 'people' ? t(lang, 'searchNeedName') : t(lang, 'searchNoCode'))
+    setError(t(lang, 'searchNoCode'))
   }
 
   async function onExportResult(format: string) {
@@ -729,7 +737,7 @@ export function App() {
                   type="text"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  required={searchKind !== 'product' && !searchBarcode}
+                  required={!searchBarcode}
                   autoFocus
                   placeholder={
                     searchKind === 'people' ? t(lang, 'searchPlaceholderPeople')
@@ -814,7 +822,7 @@ export function App() {
                         type="checkbox"
                         checked={searchKind === value}
                         onChange={() => {
-                          setSearchKind(value)
+                          setSearchKind((current) => (current === value ? '' : value))
                           if (value !== 'product') setSearchBarcode('')
                         }}
                       />
@@ -822,54 +830,69 @@ export function App() {
                     </label>
                   ))}
                 </fieldset>
-                {searchKind === 'product' ? (
-                  <label>
-                    {t(lang, 'barcode')}
-                    <input
-                      name="barcode"
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      value={searchBarcode}
-                      onChange={(event) => setSearchBarcode(event.target.value)}
-                      placeholder={t(lang, 'barcodePlaceholder')}
-                    />
-                  </label>
-                ) : null}
                 <label>
                   {t(lang, 'searchRegion')}
                   <select
-                    name="region"
-                    value={regionChoice}
-                    onChange={(event) => setRegionChoice(event.target.value)}
+                    name="region_mode"
+                    value={regionMode}
+                    onChange={(event) => setRegionMode(event.target.value as 'auto' | 'manual')}
                   >
-                    {SEARCH_LOCATIONS.map((item) => (
-                      <option key={item.code} value={item.code}>{item.label}</option>
-                    ))}
+                    <option value="auto">Auto</option>
+                    <option value="manual">Manual</option>
                   </select>
                 </label>
+                {regionMode === 'manual' ? (
+                  <>
+                    <label>
+                      Choose region
+                      <select
+                        value={regionChoice}
+                        onChange={(event) => {
+                          setRegionChoice(event.target.value)
+                          setRegionCustom('')
+                        }}
+                      >
+                        {WORLD_REGIONS.map((item) => (
+                          <option key={item.code} value={item.code}>{item.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Or type region
+                      <input
+                        type="text"
+                        value={regionCustom}
+                        onChange={(event) => setRegionCustom(event.target.value)}
+                        placeholder="City, state, or country"
+                      />
+                    </label>
+                    <input
+                      type="hidden"
+                      name="region"
+                      value={regionCustom.trim() || regionChoice}
+                    />
+                    <input
+                      type="hidden"
+                      name="location"
+                      value={regionCustom.trim() || regionLabel(regionChoice)}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <input type="hidden" name="region" value="AUTO" />
+                    <input type="hidden" name="location" value="" />
+                  </>
+                )}
                 <input type="hidden" name="language" value={lang} />
               </div>
               {error && <p className="error">{error}</p>}
               {message ? (
-                <div className={`search-rec${searchMeta.ask_add ? ' unsure' : ''}`}>
+                <div className={`search-rec${searchMeta.report_unidentified ? ' unsure' : ''}`}>
                   <p>{message}</p>
                   <SearchFacts node={searchMeta.knowledge} />
-                  {searchMeta.ask_add ? (
-                    <button
-                      type="button"
-                      className="btn-ghost"
-                      disabled={busy}
-                      onClick={() => void doSearch({ confirm_add: true })}
-                    >
-                      {searchKind === 'topic' ? t(lang, 'addThisTopic') : t(lang, 'addThisPerson')}
-                    </button>
-                  ) : null}
                 </div>
               ) : null}
-              {searchKind === 'product' ? (
-                <SearchResults items={searchHits} heading={t(lang, 'webResults')} />
-              ) : null}
+              <SearchResults items={searchHits} heading={t(lang, 'webResults')} />
             </form>
           )}
           {category !== 'help' && category !== 'safety' && selected && selected.id !== 'web_search' && selected.id === 'translate' && (
