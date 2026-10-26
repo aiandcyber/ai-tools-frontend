@@ -6,13 +6,13 @@ import {
   formatYoutubeError,
   isBackendUnreachable,
   probeYoutube,
-  rejectSearchPerson,
   runSearch,
   runTool,
   sendChat,
   synthesizeSpeech,
   withBackendRetry,
   type Download,
+  type KnowledgeNode,
   type SearchHit,
   type SearchMeta,
   type Tool,
@@ -25,7 +25,7 @@ import { apiUrl, portalUrl } from './config'
 import { useRequireAuth } from './useRequireAuth'
 import { CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type NavCategoryId } from './icons'
 import { LANGS, languageOptionLabel, speechLang, t, type Lang } from './i18n'
-import { WORLD_REGIONS, regionLabel } from './regions'
+import { SEARCH_LOCATIONS } from './regions'
 import { SearchCapture, detectCodes, hitFromCode, type CaptureHit } from './SearchCapture'
 
 type Rec = {
@@ -132,15 +132,12 @@ export function App() {
   const [speaking, setSpeaking] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [openInfoId, setOpenInfoId] = useState<string | null>(null)
-  const [regionMode, setRegionMode] = useState<'auto' | 'manual'>('auto')
-  const [regionChoice, setRegionChoice] = useState('SG')
-  const [regionCustom, setRegionCustom] = useState('')
-  const [searchKind, setSearchKind] = useState('auto')
+  const [regionChoice, setRegionChoice] = useState(SEARCH_LOCATIONS[0].code)
+  const [searchKind, setSearchKind] = useState('people')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchBarcode, setSearchBarcode] = useState('')
   const [captureTab, setCaptureTab] = useState<'scan' | 'photo' | null>(null)
   const uploadRef = useRef<HTMLInputElement | null>(null)
-  const [rejectBusy, setRejectBusy] = useState(false)
   const [docFormat, setDocFormat] = useState('docx')
   const [docTemplate, setDocTemplate] = useState('')
   const [exportBusy, setExportBusy] = useState(false)
@@ -293,7 +290,7 @@ export function App() {
     setError('')
     setSearchHits([])
     setSearchMeta({})
-    setSearchKind('auto')
+    setSearchKind('people')
     setSearchQuery('')
     setSearchBarcode('')
     setCaptureTab(null)
@@ -366,10 +363,14 @@ export function App() {
     }
   }
 
-  async function doSearch(opts?: { query?: string; barcode?: string; mode?: string }) {
+  async function doSearch(opts?: { query?: string; barcode?: string; mode?: string; confirm_add?: boolean }) {
     const query = (opts?.query ?? searchQuery).trim()
     const barcode = (opts?.barcode ?? searchBarcode).trim()
     const mode = opts?.mode ?? searchKind
+    if (mode !== 'people' && mode !== 'topic' && mode !== 'product') {
+      setError(t(lang, 'chooseSearchType'))
+      return
+    }
     if (!query && !barcode) {
       setError(t(lang, 'searchNeedQuery'))
       return
@@ -380,10 +381,11 @@ export function App() {
       const result = await runSearch({
         query,
         mode,
-        region: regionMode === 'manual' ? (regionCustom.trim() || regionChoice) : 'AUTO',
+        region: regionChoice,
         language: lang,
-        location: regionMode === 'manual' ? (regionCustom.trim() || regionLabel(regionChoice)) : '',
+        location: regionChoice,
         barcode,
+        confirm_add: opts?.confirm_add,
       })
       setMessage(result.message)
       setSearchHits(result.results || [])
@@ -455,27 +457,6 @@ export function App() {
     }
     setSearchKind(resolved.mode)
     setError(resolved.mode === 'people' ? t(lang, 'searchNeedName') : t(lang, 'searchNoCode'))
-  }
-
-  async function onWrongPerson() {
-    const nodeId = searchMeta.knowledge?.id
-    if (!nodeId) return
-    setRejectBusy(true)
-    setError('')
-    try {
-      const result = await rejectSearchPerson(nodeId)
-      setMessage(result.message)
-      setSearchMeta((prev) => ({
-        ...prev,
-        saved: false,
-        ask_if_wrong: false,
-        knowledge: result.knowledge || { ...prev.knowledge, status: 'rejected' },
-      }))
-    } catch (exc) {
-      setError(formatApiError(exc))
-    } finally {
-      setRejectBusy(false)
-    }
   }
 
   async function onExportResult(format: string) {
@@ -821,23 +802,26 @@ export function App() {
                 />
               ) : null}
               <div className="search-controls">
-                <label>
-                  {t(lang, 'searchMode')}
-                  <select
-                    name="mode"
-                    value={searchKind}
-                    onChange={(event) => {
-                      const value = event.target.value
-                      setSearchKind(value)
-                      if (value !== 'product') setSearchBarcode('')
-                    }}
-                  >
-                    <option value="auto">{t(lang, 'modeAuto')}</option>
-                    <option value="people">{t(lang, 'modePeople')}</option>
-                    <option value="product">{t(lang, 'modeProduct')}</option>
-                    <option value="topic">{t(lang, 'modeTopic')}</option>
-                  </select>
-                </label>
+                <fieldset className="search-kinds">
+                  <legend className="sr-only">{t(lang, 'searchMode')}</legend>
+                  {([
+                    ['people', t(lang, 'searchPeople')],
+                    ['topic', t(lang, 'searchTopic')],
+                    ['product', t(lang, 'searchProduct')],
+                  ] as const).map(([value, label]) => (
+                    <label key={value} className="search-kind">
+                      <input
+                        type="checkbox"
+                        checked={searchKind === value}
+                        onChange={() => {
+                          setSearchKind(value)
+                          if (value !== 'product') setSearchBarcode('')
+                        }}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </fieldset>
                 {searchKind === 'product' ? (
                   <label>
                     {t(lang, 'barcode')}
@@ -855,76 +839,37 @@ export function App() {
                 <label>
                   {t(lang, 'searchRegion')}
                   <select
-                    name="region_mode"
-                    value={regionMode}
-                    onChange={(event) => setRegionMode(event.target.value as 'auto' | 'manual')}
+                    name="region"
+                    value={regionChoice}
+                    onChange={(event) => setRegionChoice(event.target.value)}
                   >
-                    <option value="auto">Auto</option>
-                    <option value="manual">Manual</option>
+                    {SEARCH_LOCATIONS.map((item) => (
+                      <option key={item.code} value={item.code}>{item.label}</option>
+                    ))}
                   </select>
                 </label>
-                {regionMode === 'manual' ? (
-                  <>
-                    <label>
-                      Choose region
-                      <select
-                        value={regionChoice}
-                        onChange={(event) => {
-                          setRegionChoice(event.target.value)
-                          setRegionCustom('')
-                        }}
-                      >
-                        {WORLD_REGIONS.map((item) => (
-                          <option key={item.code} value={item.code}>{item.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Or type region
-                      <input
-                        type="text"
-                        value={regionCustom}
-                        onChange={(event) => setRegionCustom(event.target.value)}
-                        placeholder="City, state, or country"
-                      />
-                    </label>
-                    <input
-                      type="hidden"
-                      name="region"
-                      value={regionCustom.trim() || regionChoice}
-                    />
-                    <input
-                      type="hidden"
-                      name="location"
-                      value={regionCustom.trim() || regionLabel(regionChoice)}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <input type="hidden" name="region" value="AUTO" />
-                    <input type="hidden" name="location" value="" />
-                  </>
-                )}
                 <input type="hidden" name="language" value={lang} />
               </div>
               {error && <p className="error">{error}</p>}
-              <SearchMetaBar meta={searchMeta} lang={lang} />
               {message ? (
-                <div className={`search-rec${searchMeta.report_unidentified ? ' unsure' : ''}`}>
+                <div className={`search-rec${searchMeta.ask_add ? ' unsure' : ''}`}>
                   <p>{message}</p>
-                  {searchMeta.ask_if_wrong && searchMeta.knowledge?.id && searchMeta.knowledge?.status !== 'rejected' ? (
+                  <SearchFacts node={searchMeta.knowledge} />
+                  {searchMeta.ask_add ? (
                     <button
                       type="button"
                       className="btn-ghost"
-                      disabled={rejectBusy}
-                      onClick={() => void onWrongPerson()}
+                      disabled={busy}
+                      onClick={() => void doSearch({ confirm_add: true })}
                     >
-                      {t(lang, 'wrongPerson')}
+                      {searchKind === 'topic' ? t(lang, 'addThisTopic') : t(lang, 'addThisPerson')}
                     </button>
                   ) : null}
                 </div>
               ) : null}
-              <SearchResults items={searchHits} heading={t(lang, 'webResults')} />
+              {searchKind === 'product' ? (
+                <SearchResults items={searchHits} heading={t(lang, 'webResults')} />
+              ) : null}
             </form>
           )}
           {category !== 'help' && category !== 'safety' && selected && selected.id !== 'web_search' && selected.id === 'translate' && (
@@ -1464,29 +1409,44 @@ function DownloadList({ items }: { items: Download[] }) {
   )
 }
 
-function SearchMetaBar({ meta, lang }: { meta: SearchMeta; lang: Lang }) {
-  if (!meta.mode && !meta.region_label && !meta.graph_region) return null
-  const blocked = (meta.unresponsive || [])
-    .filter((item) => item.engine)
-    .slice(0, 4)
-    .map((item) => `${item.engine}: ${item.reason || item.error || 'unavailable'}`)
-  const mode = meta.mode === 'person' ? 'people' : meta.mode
-  const modeLabel = mode === 'people' ? t(lang, 'modePeople')
-    : mode === 'product' ? t(lang, 'modeProduct')
-      : mode === 'topic' ? t(lang, 'modeTopic')
-        : t(lang, 'modeAuto')
+const PEOPLE_FACTS: [string, string][] = [
+  ['first_name', 'First name'],
+  ['last_name', 'Last name'],
+  ['nick_name', 'Nick name'],
+  ['email', 'Email'],
+  ['phone', 'Phone'],
+  ['whatsapp', 'WhatsApp'],
+  ['other_contact', 'Other contact'],
+  ['family_location', 'Family location'],
+  ['current_location', 'Current location'],
+  ['education_level', 'Education'],
+  ['languages', 'Languages'],
+  ['interest', 'Interest'],
+  ['political_affiliation', 'Political affiliation'],
+  ['political_views', 'Political views'],
+  ['age_group', 'Age group'],
+  ['family_friends', 'Family and friends'],
+]
+
+function factText(value: unknown): string {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean).join(', ')
+  if (value == null) return ''
+  return String(value).trim()
+}
+
+function SearchFacts({ node }: { node?: KnowledgeNode | null }) {
+  const props = node?.props
+  if (!props) return null
+  const rows = PEOPLE_FACTS
+    .map(([key, label]) => [label, factText(props[key])] as const)
+    .filter(([, value]) => value)
+  if (!rows.length) return null
   return (
-    <div className="search-meta">
-      <span className="pill">{modeLabel}</span>
-      {meta.region_label ? <span className="pill region">{meta.region_label}</span> : null}
-      {meta.saved ? <span className="pill saved">{t(lang, 'saved')}</span> : null}
-      {meta.report_unidentified ? <span className="pill unsure">{t(lang, 'unidentified')}</span> : null}
-      {blocked.length ? (
-        <span className="search-warn" title={blocked.join('\n')}>
-          Some engines unavailable
-        </span>
-      ) : null}
-    </div>
+    <ul className="search-facts">
+      {rows.map(([label, value]) => (
+        <li key={label}><span>{label}</span>{value}</li>
+      ))}
+    </ul>
   )
 }
 
@@ -1512,7 +1472,6 @@ function SearchResults({ items, heading }: { items: SearchHit[]; heading?: strin
                 {(hit.categories || (hit.category ? [hit.category] : [])).slice(0, 2).map((category) => (
                   <em key={category}>{category}</em>
                 ))}
-                {(hit.reasons || []).includes('regional') ? <em className="regional">local</em> : null}
               </span>
               <span className="search-title">{hit.title}</span>
               {hit.snippet ? <span className="search-snippet">{hit.snippet}</span> : null}

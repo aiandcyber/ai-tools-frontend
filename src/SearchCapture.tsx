@@ -4,7 +4,7 @@ import { t, type Lang } from './i18n'
 export type CaptureHit = {
   query?: string
   barcode?: string
-  mode: 'people' | 'product' | 'auto'
+  mode: 'people' | 'product' | 'topic'
   file?: File
 }
 
@@ -42,7 +42,7 @@ export function hitFromCode(rawValue: string, format: string): CaptureHit {
   if (BARCODE_FORMATS.has(format) || (digits.length >= 8 && digits.length <= 14 && digits === value.replace(/\s/g, ''))) {
     return { barcode: digits || value, mode: 'product' }
   }
-  return { query: value, mode: 'auto' }
+  return { query: value, mode: 'people' }
 }
 
 export function SearchCapture({

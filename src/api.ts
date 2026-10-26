@@ -51,6 +51,7 @@ export type KnowledgeNode = {
   extract?: string
   confidence?: number
   status?: string
+  props?: Record<string, unknown>
 }
 
 export type SearchMeta = {
@@ -66,6 +67,7 @@ export type SearchMeta = {
   confidence?: number
   saved?: boolean
   ask_if_wrong?: boolean
+  ask_add?: boolean
   report_unidentified?: boolean
   knowledge?: KnowledgeNode | null
 }
@@ -275,6 +277,7 @@ export async function runSearch(body: {
   language?: string
   location?: string
   barcode?: string
+  confirm_add?: boolean
 }): Promise<{ message: string; results: SearchHit[]; meta: SearchMeta }> {
   const response = await apiFetch(apiUrl('/api/search'), {
     method: 'POST',

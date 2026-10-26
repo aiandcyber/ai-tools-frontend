@@ -437,6 +437,46 @@ button { cursor: pointer; }
   justify-content: center;
 }
 
+.search-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.2rem;
+  border: 0;
+  margin: 0;
+  padding: 0.15rem 0 0;
+  width: 100%;
+  justify-content: center;
+}
+
+.search-kind {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.4rem !important;
+  cursor: pointer;
+}
+
+.search-kind input {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+}
+
+.search-facts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.95rem;
+  color: #134e4a;
+}
+
+.search-facts span {
+  color: var(--muted);
+  font-weight: 650;
+  margin-right: 0.35rem;
+}
+
 .search-controls label {
   display: flex;
   flex-direction: column;
