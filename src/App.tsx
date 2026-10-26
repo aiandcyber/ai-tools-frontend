@@ -365,7 +365,7 @@ export function App() {
     }
   }
 
-  async function doSearch(opts?: { query?: string; barcode?: string; mode?: string; confirm_add?: boolean }) {
+  async function doSearch(opts?: { query?: string; barcode?: string; mode?: string; confirm_add?: boolean; product_props?: Record<string, string> }) {
     const query = (opts?.query ?? searchQuery).trim()
     const barcode = (opts?.barcode ?? searchBarcode).trim()
     const mode = opts?.mode ?? searchKind
@@ -388,6 +388,7 @@ export function App() {
         location: regionMode === 'manual' ? (regionCustom.trim() || regionLabel(regionChoice)) : '',
         barcode,
         confirm_add: opts?.confirm_add,
+        product_props: opts?.product_props,
       })
       setMessage(result.message)
       setSearchHits(result.results || [])
@@ -887,12 +888,23 @@ export function App() {
               </div>
               {error && <p className="error">{error}</p>}
               {message ? (
-                <div className={`search-rec${searchMeta.report_unidentified ? ' unsure' : ''}`}>
+                <div className={`search-rec${searchMeta.report_unidentified ? ' unsure' : ''}${searchMeta.mode === 'product' ? ` ${productRecClass(searchMeta.buy_recommendation)}` : ''}`}>
                   <p>{message}</p>
-                  <SearchFacts node={searchMeta.knowledge} />
+                  {searchMeta.mode === 'product' ? (
+                    <ProductCard
+                      lang={lang}
+                      meta={searchMeta}
+                      busy={busy}
+                      onSave={(props) => void doSearch({ confirm_add: true, product_props: props })}
+                    />
+                  ) : (
+                    <SearchFacts node={searchMeta.knowledge} />
+                  )}
                 </div>
               ) : null}
-              <SearchResults items={searchHits} heading={t(lang, 'webResults')} />
+              {searchMeta.mode === 'product' ? null : (
+                <SearchResults items={searchHits} heading={t(lang, 'webResults')} />
+              )}
             </form>
           )}
           {category !== 'help' && category !== 'safety' && selected && selected.id !== 'web_search' && selected.id === 'translate' && (
@@ -1450,6 +1462,135 @@ const PEOPLE_FACTS: [string, string][] = [
   ['age_group', 'Age group'],
   ['family_friends', 'Family and friends'],
 ]
+
+const PRODUCT_FACT_KEYS: [string, string][] = [
+  ['brand', 'productBrand'],
+  ['barcode', 'barcode'],
+  ['ingredients', 'productIngredients'],
+  ['additives', 'productAdditives'],
+  ['nutrition_summary', 'productNutrition'],
+  ['vegetarian', 'productVegetarian'],
+  ['vegan', 'productVegan'],
+  ['halal', 'productHalal'],
+  ['allergens', 'productAllergens'],
+  ['local_price', 'productLocalPrice'],
+  ['online_price', 'productOnlinePrice'],
+]
+
+const PRODUCT_GAP_FIELDS: { key: string; label: string; kind?: 'choice' | 'area' }[] = [
+  { key: 'brand', label: 'productBrand' },
+  { key: 'ingredients', label: 'productIngredients', kind: 'area' },
+  { key: 'vegetarian', label: 'productVegetarian', kind: 'choice' },
+  { key: 'vegan', label: 'productVegan', kind: 'choice' },
+  { key: 'halal', label: 'productHalal', kind: 'choice' },
+  { key: 'nutrition_summary', label: 'productNutrition' },
+  { key: 'local_price', label: 'productLocalPrice' },
+  { key: 'online_price', label: 'productOnlinePrice' },
+  { key: 'user_notes', label: 'productNotes', kind: 'area' },
+]
+
+function productRecClass(verdict?: string): string {
+  if (verdict === 'do_not_buy') return 'avoid'
+  if (verdict === 'caution') return 'caution'
+  if (verdict === 'buy') return 'buy'
+  return ''
+}
+
+function ProductCard({
+  lang,
+  meta,
+  busy,
+  onSave,
+}: {
+  lang: Lang
+  meta: SearchMeta
+  busy: boolean
+  onSave: (props: Record<string, string>) => void
+}) {
+  const props = meta.knowledge?.props || {}
+  const missing = new Set(meta.missing_fields || [])
+  const rows = PRODUCT_FACT_KEYS
+    .map(([key, label]) => [t(lang, label), factText(props[key])] as const)
+    .filter(([, value]) => value)
+  const reasons = meta.buy_reasons || []
+  const gaps = PRODUCT_GAP_FIELDS.filter((field) => missing.has(field.key))
+  const sources = Array.isArray(props.sources) ? props.sources : []
+
+  function collectGaps(root: HTMLElement): Record<string, string> {
+    const next: Record<string, string> = {}
+    root.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('[name]').forEach((el) => {
+      const text = String(el.value || '').trim()
+      if (el.name && text) next[el.name] = text
+    })
+    return next
+  }
+
+  return (
+    <>
+      {reasons.length ? (
+        <ul className="product-reasons">
+          {reasons.map((reason) => <li key={reason}>{reason}</li>)}
+        </ul>
+      ) : null}
+      {rows.length ? (
+        <ul className="search-facts">
+          {rows.map(([label, value]) => (
+            <li key={label}><span>{label}</span>{value}</li>
+          ))}
+        </ul>
+      ) : null}
+      {sources.length ? (
+        <ul className="search-facts">
+          {sources.map((src, index) => {
+            const item = src && typeof src === 'object' ? src as Record<string, unknown> : {}
+            const name = String(item.name || t(lang, 'productSources'))
+            const url = String(item.url || '')
+            return (
+              <li key={`${name}-${index}`}>
+                <span>{t(lang, 'productSources')}</span>
+                {url ? <a href={url} target="_blank" rel="noopener noreferrer">{name}</a> : name}
+              </li>
+            )
+          })}
+        </ul>
+      ) : null}
+      {gaps.length ? (
+        <div className="search-gaps">
+          <p>{t(lang, 'productFillGaps')}</p>
+          {gaps.map((field) => (
+            <label key={field.key}>
+              {t(lang, field.label)}
+              {field.kind === 'choice' ? (
+                <select name={field.key} defaultValue="">
+                  <option value="">{t(lang, 'productUnknown')}</option>
+                  <option value="yes">{t(lang, 'productYes')}</option>
+                  <option value="no">{t(lang, 'productNo')}</option>
+                </select>
+              ) : field.kind === 'area' ? (
+                <textarea name={field.key} rows={2} />
+              ) : (
+                <input name={field.key} type="text" />
+              )}
+            </label>
+          ))}
+          <button
+            type="button"
+            className="btn-ghost"
+            disabled={busy}
+            onClick={(event) => {
+              const root = event.currentTarget.closest('.search-gaps')
+              if (!(root instanceof HTMLElement)) return
+              const next = collectGaps(root)
+              if (Object.keys(next).length) onSave(next)
+            }}
+          >
+            {t(lang, 'productSaveFacts')}
+          </button>
+        </div>
+      ) : null}
+    </>
+  )
+}
 
 function factText(value: unknown): string {
   if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean).join(', ')

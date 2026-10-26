@@ -526,6 +526,34 @@ button { cursor: pointer; }
   align-items: flex-start;
 }
 .search-rec.unsure { background: #fff7ed; }
+.search-rec.buy { background: #ecfdf5; }
+.search-rec.caution { background: #fffbeb; }
+.search-rec.avoid { background: #fef2f2; }
+.search-rec .product-reasons,
+.search-rec .search-facts { width: 100%; }
+.search-rec .product-reasons { margin: 0; padding-left: 1.1rem; color: #134e4a; }
+.search-gaps {
+  width: 100%;
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+}
+.search-gaps label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: var(--muted);
+}
+.search-gaps input,
+.search-gaps select,
+.search-gaps textarea {
+  font: inherit;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+}
 .search-rec p {
   margin: 0;
   font-size: 1.05rem;

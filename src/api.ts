@@ -70,6 +70,9 @@ export type SearchMeta = {
   ask_add?: boolean
   report_unidentified?: boolean
   knowledge?: KnowledgeNode | null
+  buy_recommendation?: string
+  buy_reasons?: string[]
+  missing_fields?: string[]
 }
 
 let tokenGetter: (() => Promise<string>) | null = null
@@ -278,6 +281,9 @@ export async function runSearch(body: {
   location?: string
   barcode?: string
   confirm_add?: boolean
+  product_props?: Record<string, string>
+  age_group?: string
+  diet?: string
 }): Promise<{ message: string; results: SearchHit[]; meta: SearchMeta }> {
   const response = await apiFetch(apiUrl('/api/search'), {
     method: 'POST',
