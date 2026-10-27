@@ -2,8 +2,8 @@
 
 :root {
   --ink: #0f172a;
-  --muted: #334155;
-  --line: #64748b;
+  --muted: #64748b;
+  --line: #e2e8f0;
   --paper: #f8fafc;
   --card: #ffffff;
   --sea: #0f766e;
@@ -121,19 +121,10 @@ button { cursor: pointer; }
   width: 100%;
   margin-top: 0.35rem;
   padding: 0.8rem 0.9rem;
-  border: 1.5px solid var(--line);
+  border: 1px solid var(--line);
   border-radius: 0.95rem;
   background: #fff;
-  color: var(--ink);
   min-height: 2.85rem;
-}
-
-.field-inline select::placeholder,
-.search::placeholder,
-.panel input::placeholder,
-.panel textarea::placeholder {
-  color: #475569;
-  opacity: 1;
 }
 
 .btn-primary,
@@ -154,9 +145,8 @@ button { cursor: pointer; }
 }
 
 .btn-secondary {
-  background: #fff;
+  background: #eef2f7;
   color: var(--ink);
-  border: 1.5px solid var(--line);
 }
 
 .btn-signout {
@@ -187,7 +177,7 @@ button { cursor: pointer; }
   justify-content: center;
   gap: 0.35rem;
   padding: 0.75rem 0.45rem;
-  border: 1.5px solid #94a3b8;
+  border: 1px solid transparent;
   border-radius: 1.1rem;
   background: rgba(255, 255, 255, 0.86);
   color: var(--ink);
@@ -272,7 +262,7 @@ button { cursor: pointer; }
   align-items: center;
   gap: 0.55rem;
   padding: 0.55rem 0.55rem 0.55rem 1.15rem;
-  border: 1.5px solid #475569;
+  border: 1px solid #d8dee6;
   border-radius: 999px;
   background: #fff;
   box-shadow: var(--shadow);
@@ -290,15 +280,9 @@ button { cursor: pointer; }
   margin: 0 !important;
   padding: 0.95rem 0.4rem !important;
   font-size: 1.2rem;
-  color: var(--ink);
   background: transparent !important;
   box-shadow: none !important;
   min-height: auto;
-}
-
-.google-box input::placeholder {
-  color: #475569;
-  opacity: 1;
 }
 
 .google-box .btn-primary {
@@ -562,10 +546,8 @@ button { cursor: pointer; }
 .search-gaps textarea {
   font: inherit;
   padding: 0.4rem 0.55rem;
-  border: 1.5px solid var(--line);
+  border: 1px solid var(--line);
   border-radius: 0.55rem;
-  background: #fff;
-  color: var(--ink);
 }
 .search-rec p {
   margin: 0;
@@ -890,7 +872,7 @@ button { cursor: pointer; }
 .field-card {
   display: block;
   padding: 0.95rem 1rem;
-  border: 1.5px solid var(--line);
+  border: 1px solid var(--line);
   border-radius: 1.1rem;
   background: #fff;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
@@ -908,9 +890,8 @@ button { cursor: pointer; }
 .field-card select,
 .field-card input {
   margin-top: 0;
-  border: 1.5px solid var(--line);
-  background: #fff;
-  color: var(--ink);
+  border-color: #cbd5e1;
+  background: #f8fafc;
 }
 
 .field-card textarea:focus,
@@ -936,7 +917,7 @@ button { cursor: pointer; }
   gap: 0.45rem;
   padding: 0.75rem 1rem;
   margin: 0 0 1rem;
-  border: 1.5px dashed #475569;
+  border: 1.5px dashed #94a3b8;
   border-radius: 1.2rem;
   background: linear-gradient(180deg, #f8fafc, #ffffff);
   text-align: center;
@@ -952,7 +933,7 @@ button { cursor: pointer; }
 .dropzone-title {
   margin: 0;
   font-weight: 650;
-  color: #0f172a;
+  color: #334155;
   font-size: 1.02rem;
 }
 
