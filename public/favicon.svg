@@ -1,4 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="6" fill="#1b2430"/>
-  <path d="M18 8.5a3.2 3.2 0 0 0-4.5 4.5L8 18.5V22h3.5l5.5-5.5A3.2 3.2 0 0 0 18 8.5z" fill="none" stroke="#ffffff" stroke-width="1.6"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="AI-forAll">
+  <defs>
+    <linearGradient id="bg" x1="4" y1="2" x2="28" y2="30" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#4338ca"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#bg)"/>
+  <circle cx="16" cy="13" r="5.5" fill="#ffffff"/>
+  <circle cx="10" cy="22.5" r="2.75" fill="#ffffff" opacity="0.9"/>
+  <circle cx="16" cy="25" r="2.75" fill="#ffffff" opacity="0.9"/>
+  <circle cx="22" cy="22.5" r="2.75" fill="#ffffff" opacity="0.9"/>
 </svg>

@@ -586,7 +586,7 @@ export function App() {
     <div className="app">
       <header className="topbar">
         <a className="brand" href={portalUrl()}>
-          <span className="brand-mark" aria-hidden="true">AI</span>
+          <img className="brand-logo" src="/favicon.svg" alt="" width="36" height="36" />
           <span>
             <strong>{t(lang, 'portal')}</strong>
             <small>{t(lang, 'brand')}</small>
@@ -1206,6 +1206,12 @@ export function App() {
           </form>
         </aside>
       </div>
+      <footer className="afa-footer">
+        <div className="afa-footer-inner">
+          <span>© 2026 AI-forAll Hong Kong Limited 全民人工智能香港有限公司</span>
+          <a href="https://ai-forall.org/privacy.html">Privacy</a>
+        </div>
+      </footer>
     </div>
   )
 }
@@ -1423,12 +1429,13 @@ function FileDropField({
         multiple={multiple}
         onChange={(event) => syncNames(event.target.files)}
       />
-      <div className="dropzone-icon" aria-hidden="true">⬆</div>
       <p className="dropzone-title">{dropHint}</p>
-      <button type="button" className="btn-secondary" onClick={() => inputRef.current?.click()}>
-        {browseLabel}
-      </button>
-      <p className="dropzone-files">{names || emptyLabel}</p>
+      <div className="dropzone-actions">
+        <button type="button" className="btn-secondary" onClick={() => inputRef.current?.click()}>
+          {browseLabel}
+        </button>
+        <p className="dropzone-files">{names || emptyLabel}</p>
+      </div>
     </div>
   )
 }

@@ -143,12 +143,13 @@ export function ScanPage({
             type="file"
             onChange={(event) => syncNames(event.target.files)}
           />
-          <div className="dropzone-icon" aria-hidden="true">⬆</div>
           <p className="dropzone-title">{t(lang, 'dropHint')}</p>
-          <button type="button" className="btn-secondary" onClick={() => inputRef.current?.click()}>
-            {t(lang, 'browse')}
-          </button>
-          <p className="dropzone-files">{fileName || t(lang, 'files')}</p>
+          <div className="dropzone-actions">
+            <button type="button" className="btn-secondary" onClick={() => inputRef.current?.click()}>
+              {t(lang, 'browse')}
+            </button>
+            <p className="dropzone-files">{fileName || t(lang, 'files')}</p>
+          </div>
         </div>
       )}
       {mode === 'message' && (
