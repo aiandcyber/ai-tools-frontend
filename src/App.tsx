@@ -1206,12 +1206,6 @@ export function App() {
           </form>
         </aside>
       </div>
-      <footer className="afa-footer">
-        <div className="afa-footer-inner">
-          <span>© 2026 AI-forAll Hong Kong Limited 全民人工智能香港有限公司</span>
-          <a href="https://ai-forall.org/privacy.html">Privacy</a>
-        </div>
-      </footer>
     </div>
   )
 }

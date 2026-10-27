@@ -54,34 +54,6 @@ button { cursor: pointer; }
   overflow: hidden;
 }
 
-.afa-footer {
-  flex: 0 0 auto;
-  background: transparent;
-  color: #64748b;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.afa-footer-inner {
-  width: 100%;
-  margin: 0;
-  padding: 12px 28px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  border-top: 1px solid #e2e8f0;
-}
-
-.afa-footer a {
-  color: #64748b;
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.afa-footer a:hover { color: #0f172a; }
-
 .topbar {
   flex: 0 0 auto;
   display: grid;
@@ -1425,8 +1397,6 @@ button { cursor: pointer; }
     width: 100%;
   }
   .dropzone .btn-secondary { width: auto; }
-  .afa-footer { font-size: 12px; }
-  .afa-footer-inner { padding: 12px 16px; }
   .contact-actions .btn-primary { width: auto; }
   .assistant-form .row {
     flex-direction: column;
