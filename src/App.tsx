@@ -8,8 +8,9 @@ import {
   probeYoutube,
   runSearch,
   runTool,
-  sendChat,
+  sendChatStream,
   synthesizeSpeech,
+  transcribeAudio,
   withBackendRetry,
   type Download,
   type KnowledgeNode,
@@ -30,9 +31,16 @@ import { SearchCapture, detectCodes, hitFromCode, type CaptureHit } from './Sear
 
 type Rec = {
   lang: string
+  continuous: boolean
+  interimResults: boolean
   start: () => void
   stop: () => void
-  onresult: ((event: { results: { 0: { 0: { transcript: string } } } }) => void) | null
+  abort?: () => void
+  onresult: ((event: {
+    results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>
+  }) => void) | null
+  onerror: ((event: { error: string }) => void) | null
+  onend: (() => void) | null
 }
 
 let activeAudio: HTMLAudioElement | null = null
@@ -78,33 +86,120 @@ function stopSpeech() {
   if ('speechSynthesis' in window) window.speechSynthesis.cancel()
 }
 
-async function speakEdge(text: string, lang: Lang, onEnd?: () => void) {
-  stopSpeech()
+function stripForSpeech(raw: string): string {
+  return raw
+    .replace(/!\[[^\]]*]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)]\([^)]*\)/g, '$1')
+    .replace(/\*\s*(?:waving|waves|wave)[^*]*\*/gi, ' ')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/[*_~`#>]+/g, ' ')
+    .replace(/\p{Extended_Pictographic}/gu, ' ')
+    .replace(/\b(waving hand|thumbs up|red heart|smiling face|star-struck|asterisks?)\b/gi, ' ')
+}
+
+function speakableText(raw: string): string {
+  return stripForSpeech(raw).replace(/\s+/g, ' ').trim()
+}
+
+function displayTokens(chunk: string): string[] {
+  if (!chunk) return []
+  if (/\s/.test(chunk) || /[A-Za-z]/.test(chunk)) {
+    return chunk.match(/\S+\s*|\s+/g) ?? [chunk]
+  }
+  return Array.from(chunk)
+}
+
+async function playSpeechChunk(text: string, lang: Lang): Promise<void> {
+  const spoken = speakableText(text)
+  if (!spoken) return
   try {
-    const url = await synthesizeSpeech(text, lang)
+    const url = await synthesizeSpeech(spoken, lang)
+    if (activeObjectUrl) URL.revokeObjectURL(activeObjectUrl)
     activeObjectUrl = url
     const audio = new Audio(url)
     activeAudio = audio
-    audio.onended = () => {
-      stopSpeech()
-      onEnd?.()
-    }
-    audio.onerror = () => {
-      stopSpeech()
-      onEnd?.()
-    }
-    await audio.play()
+    await new Promise<void>((resolve) => {
+      audio.onended = () => resolve()
+      audio.onerror = () => resolve()
+      void audio.play().catch(() => resolve())
+    })
   } catch {
-    // Fallback to browser TTS if edge-tts endpoint is unavailable
-    if (!('speechSynthesis' in window)) {
-      onEnd?.()
-      return
+    if (!('speechSynthesis' in window)) return
+    await new Promise<void>((resolve) => {
+      const utterance = new SpeechSynthesisUtterance(spoken)
+      utterance.lang = speechLang(lang)
+      utterance.onend = () => resolve()
+      utterance.onerror = () => resolve()
+      window.speechSynthesis.speak(utterance)
+    })
+  }
+}
+
+function createSpeakStream(lang: Lang, onIdle: () => void) {
+  let cancelled = false
+  let pending = ''
+  let started = false
+  const queue: string[] = []
+  let running = false
+
+  async function drain() {
+    if (running) return
+    running = true
+    while (!cancelled && queue.length) {
+      const chunk = queue.shift()
+      if (chunk) await playSpeechChunk(chunk, lang)
     }
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = speechLang(lang)
-    utterance.onend = () => onEnd?.()
-    utterance.onerror = () => onEnd?.()
-    window.speechSynthesis.speak(utterance)
+    running = false
+    if (!cancelled && queue.length === 0) onIdle()
+  }
+
+  function enqueue(text: string) {
+    const spoken = speakableText(text)
+    if (!spoken || cancelled) return
+    queue.push(spoken)
+    void drain()
+  }
+
+  function flushSentences(force: boolean) {
+    const sentence = /[\s\S]*?[.!?。！？\n]+/
+    let match = pending.match(sentence)
+    while (match) {
+      enqueue(match[0])
+      pending = pending.slice(match[0].length)
+      match = pending.match(sentence)
+    }
+    if (force && pending.trim()) {
+      enqueue(pending)
+      pending = ''
+    }
+  }
+
+  return {
+    feed(rawDelta: string) {
+      if (cancelled) return
+      pending += stripForSpeech(rawDelta)
+      if (!started) {
+        const cjk = /[\u3400-\u9fff\u3040-\u30ff]/
+        const first = cjk.test(pending)
+          ? pending.match(/^\s*(\S)/)
+          : pending.match(/^\s*(\S+)/)
+        if (first) {
+          started = true
+          enqueue(first[1])
+          pending = pending.slice(first[0].length)
+        }
+      }
+      flushSentences(false)
+    },
+    finish() {
+      flushSentences(true)
+    },
+    cancel() {
+      cancelled = true
+      queue.length = 0
+      stopSpeech()
+    },
   }
 }
 
@@ -130,6 +225,7 @@ export function App() {
   const [draft, setDraft] = useState('')
   const [speakReplies, setSpeakReplies] = useState(true)
   const [speaking, setSpeaking] = useState(false)
+  const [listening, setListening] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [openInfoId, setOpenInfoId] = useState<string | null>(null)
   const [regionMode, setRegionMode] = useState<'auto' | 'manual'>('auto')
@@ -157,6 +253,15 @@ export function App() {
   })
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const chatAbortRef = useRef<AbortController | null>(null)
+  const speakStreamRef = useRef<ReturnType<typeof createSpeakStream> | null>(null)
+  const voiceRef = useRef<{
+    rec?: Rec
+    recorder?: MediaRecorder
+    stream?: MediaStream
+    chunks?: Blob[]
+    base?: string
+    mode?: 'speech' | 'record'
+  } | null>(null)
   const threadRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -221,6 +326,9 @@ export function App() {
 
   useEffect(() => () => {
     chatAbortRef.current?.abort()
+    speakStreamRef.current?.cancel()
+    voiceRef.current?.stream?.getTracks().forEach((track) => track.stop())
+    try { voiceRef.current?.rec?.stop() } catch { /* ignore */ }
     stopSpeech()
   }, [])
 
@@ -486,7 +594,6 @@ export function App() {
     event.preventDefault()
     const text = draft.trim()
     if (!text || busy) return
-    // Capture before any await — React nulls event.currentTarget after yield.
     const formEl = event.currentTarget
     if (!(await ensureAuth())) return
     setDraft('')
@@ -495,45 +602,61 @@ export function App() {
     form.set('message', text)
     form.set('language', lang)
     chatAbortRef.current?.abort()
+    speakStreamRef.current?.cancel()
     const controller = new AbortController()
     chatAbortRef.current = controller
+    const speak = speakReplies ? createSpeakStream(lang, () => setSpeaking(false)) : null
+    speakStreamRef.current = speak
+    if (speak) setSpeaking(true)
+    const pendingTokens: string[] = []
+    let typing = false
+    const pumpDisplay = async () => {
+      if (typing) return
+      typing = true
+      while (pendingTokens.length && !controller.signal.aborted) {
+        const next = pendingTokens.shift() as string
+        setChat((items) => {
+          const withoutRetry = items.filter((item) => !item.notice)
+          const last = withoutRetry[withoutRetry.length - 1]
+          if (last?.role === 'assistant' && !last.notice) {
+            return [...withoutRetry.slice(0, -1), { ...last, text: last.text + next }]
+          }
+          return [...withoutRetry, { role: 'assistant', text: next }]
+        })
+        speak?.feed(next)
+        await new Promise((resolve) => window.setTimeout(resolve, 28))
+      }
+      typing = false
+    }
     setBusy(true)
     try {
-      const result = await withBackendRetry(
-        () => sendChat(form, controller.signal),
-        {
-          signal: controller.signal,
-          maxAttempts: 4,
-          baseDelayMs: 1500,
-          onAttempt: (_attempt, error) => {
-            if (!isBackendUnreachable(error)) return
-            setChat((items) => {
-              const next = [...items]
-              const notice = { role: 'assistant' as const, text: t(lang, 'reconnecting'), notice: true }
-              if (next.length && next[next.length - 1]?.notice) {
-                next[next.length - 1] = notice
-                return next
-              }
-              return [...next, notice]
-            })
-          },
+      const result = await sendChatStream(
+        form,
+        (delta) => {
+          pendingTokens.push(...displayTokens(delta))
+          void pumpDisplay()
         },
+        controller.signal,
       )
-      setChat((items) => {
-        const withoutRetry = items.filter((item) => !item.notice)
-        return [...withoutRetry, { role: 'assistant', text: result.reply }]
-      })
-      setDownloads(result.downloads)
-      if (speakReplies) {
-        setSpeaking(true)
-        void speakEdge(result.reply, lang, () => setSpeaking(false))
+      while (pendingTokens.length || typing) {
+        await new Promise((resolve) => window.setTimeout(resolve, 20))
       }
+      speak?.finish()
+      setDownloads(result.downloads)
     } catch (exc) {
+      speak?.cancel()
+      setSpeaking(false)
       if (controller.signal.aborted || (exc instanceof DOMException && exc.name === 'AbortError')) {
-        setChat((items) => [...items, { role: 'assistant', text: 'Stopped.' }])
+        setChat((items) => {
+          const last = items[items.length - 1]
+          if (last?.role === 'assistant' && last.text) return items
+          return [...items, { role: 'assistant', text: 'Stopped.' }]
+        })
       } else {
         setChat((items) => {
           const withoutRetry = items.filter((item) => !item.notice)
+          const last = withoutRetry[withoutRetry.length - 1]
+          if (last?.role === 'assistant' && last.text) return withoutRetry
           return [...withoutRetry, { role: 'assistant', text: formatApiError(exc) }]
         })
       }
@@ -546,22 +669,117 @@ export function App() {
   function onStopAssistant() {
     chatAbortRef.current?.abort()
     chatAbortRef.current = null
+    speakStreamRef.current?.cancel()
+    speakStreamRef.current = null
     stopSpeech()
     setSpeaking(false)
     setBusy(false)
   }
 
-  function onVoice() {
-    const ctor = (window as unknown as { SpeechRecognition?: new () => Rec; webkitSpeechRecognition?: new () => Rec }).SpeechRecognition
-      || (window as unknown as { webkitSpeechRecognition?: new () => Rec }).webkitSpeechRecognition
-    if (!ctor) {
-      setError(t(lang, 'speechUnsupported'))
+  function stopVoiceCapture() {
+    const session = voiceRef.current
+    voiceRef.current = null
+    setListening(false)
+    try { session?.rec?.stop() } catch { /* ignore */ }
+    try { session?.rec?.abort?.() } catch { /* ignore */ }
+    if (session?.recorder && session.recorder.state === 'recording') {
+      try { session.recorder.stop() } catch { /* ignore */ }
+    }
+    session?.stream?.getTracks().forEach((track) => track.stop())
+  }
+
+  async function transcribeVoice(blob: Blob) {
+    if (!(await ensureAuth())) return
+    try {
+      const heard = await transcribeAudio(blob, lang)
+      if (!heard) {
+        setError(t(lang, 'voiceFailed'))
+        return
+      }
+      setDraft((prev) => [prev.trim(), heard].filter(Boolean).join(' '))
+    } catch (exc) {
+      setError(formatApiError(exc, t(lang, 'voiceFailed')))
+    }
+  }
+
+  async function startVoiceRecorder() {
+    stopVoiceCapture()
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      const chunks: Blob[] = []
+      voiceRef.current = { recorder, stream, chunks, mode: 'record' }
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) chunks.push(event.data)
+      }
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop())
+        setListening(false)
+        if (voiceRef.current?.recorder === recorder) voiceRef.current = null
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+        if (blob.size > 0) void transcribeVoice(blob)
+        else setError(t(lang, 'voiceFailed'))
+      }
+      recorder.start()
+      setListening(true)
+      setError('')
+    } catch {
+      setError(t(lang, 'micDenied'))
+    }
+  }
+
+  async function onVoice() {
+    if (listening) {
+      if (voiceRef.current?.mode === 'record') {
+        try { voiceRef.current.recorder?.stop() } catch { stopVoiceCapture() }
+        return
+      }
+      stopVoiceCapture()
       return
     }
-    const recognition = new ctor()
-    recognition.lang = speechLang(lang)
-    recognition.onresult = (event) => setDraft(event.results[0][0].transcript)
-    recognition.start()
+    setError('')
+    const ctor = (window as unknown as { SpeechRecognition?: new () => Rec; webkitSpeechRecognition?: new () => Rec }).SpeechRecognition
+      || (window as unknown as { webkitSpeechRecognition?: new () => Rec }).webkitSpeechRecognition
+    if (ctor) {
+      const recognition = new ctor()
+      recognition.lang = speechLang(lang)
+      recognition.continuous = true
+      recognition.interimResults = true
+      const base = draft
+      voiceRef.current = { rec: recognition, base, mode: 'speech' }
+      recognition.onresult = (event) => {
+        let finalText = ''
+        let interim = ''
+        for (let i = 0; i < event.results.length; i += 1) {
+          const piece = event.results[i][0].transcript
+          if (event.results[i].isFinal) finalText += `${piece} `
+          else interim += piece
+        }
+        setDraft([base, finalText, interim].filter((part) => part.trim()).join(' ').replace(/\s+/g, ' '))
+      }
+      recognition.onerror = (event) => {
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setError(t(lang, 'micDenied'))
+          stopVoiceCapture()
+          return
+        }
+        if (event.error === 'no-speech') return
+        void startVoiceRecorder()
+      }
+      recognition.onend = () => {
+        if (voiceRef.current?.rec === recognition && voiceRef.current.mode === 'speech') {
+          try { recognition.start() } catch { stopVoiceCapture() }
+        }
+      }
+      try {
+        recognition.start()
+        setListening(true)
+        return
+      } catch {
+        /* fall through to recorder */
+      }
+    }
+    await startVoiceRecorder()
   }
 
   function onResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
@@ -1189,13 +1407,21 @@ export function App() {
             {chat.map((item, index) => (
               <div key={index} className={`bubble ${item.role}`}>{item.text}</div>
             ))}
-            {busy ? <div className="bubble assistant">{t(lang, 'working')}</div> : null}
+            {busy && !(chat[chat.length - 1]?.role === 'assistant' && chat[chat.length - 1]?.text) ? (
+              <div className="bubble assistant">{t(lang, 'working')}</div>
+            ) : null}
           </div>
           <form className="assistant-form" onSubmit={onChat}>
             <textarea name="draft" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t(lang, 'placeholder')} rows={3} />
             <input name="files" type="file" multiple />
             <div className="row">
-              <button type="button" className="btn-secondary" onClick={onVoice}>{t(lang, 'voice')}</button>
+              <button
+                type="button"
+                className={`btn-secondary${listening ? ' listening' : ''}`}
+                onClick={() => { void onVoice() }}
+              >
+                {listening ? t(lang, 'listening') : t(lang, 'voice')}
+              </button>
               <div className="row" style={{ gap: '0.45rem', marginLeft: 'auto' }}>
                 {(busy || speaking) ? (
                   <button type="button" className="btn-stop" onClick={onStopAssistant}>{t(lang, 'stop')}</button>

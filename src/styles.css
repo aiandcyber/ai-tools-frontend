@@ -1281,6 +1281,11 @@ button { cursor: pointer; }
   color: #e8f7ff;
 }
 
+.assistant .btn-secondary.listening {
+  background: #9f1239;
+  color: #fff7f7;
+}
+
 .assistant .btn-primary {
   background: #f59e0b;
   color: #1a1205;

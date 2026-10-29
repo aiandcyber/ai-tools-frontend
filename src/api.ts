@@ -349,6 +349,95 @@ export async function sendChat(
   return payload
 }
 
+export async function sendChatStream(
+  form: FormData,
+  onDelta: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<{ reply: string; downloads: Download[]; llm_provider?: string }> {
+  form.set('stream', '1')
+  const response = await apiFetch(apiUrl('/api/chat'), {
+    method: 'POST',
+    body: form,
+    headers: {
+      ...(await headers()),
+      Accept: 'text/event-stream',
+    },
+    signal,
+  })
+  const ctype = response.headers.get('content-type') || ''
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({ detail: response.statusText }))
+    throw new Error(userHttpError(response.status, payload.detail, 'The assistant could not reply. Please try again.'))
+  }
+  if (!ctype.includes('text/event-stream') || !response.body) {
+    const payload = await response.json().catch(() => ({ detail: response.statusText }))
+    const reply = String(payload.reply || '')
+    if (reply) onDelta(reply)
+    return {
+      reply,
+      downloads: payload.downloads || [],
+      llm_provider: payload.llm_provider,
+    }
+  }
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let reply = ''
+  let downloads: Download[] = []
+  let llm_provider: string | undefined
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const parts = buffer.split('\n\n')
+    buffer = parts.pop() || ''
+    for (const part of parts) {
+      const data = part
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trim())
+        .join('')
+      if (!data) continue
+      let event: { type?: string; text?: string; detail?: string; downloads?: Download[]; llm_provider?: string; reply?: string }
+      try {
+        event = JSON.parse(data)
+      } catch {
+        continue
+      }
+      if (event.type === 'delta' && event.text) {
+        reply += event.text
+        onDelta(event.text)
+      } else if (event.type === 'done') {
+        downloads = event.downloads || []
+        llm_provider = event.llm_provider
+        if (event.reply && !reply) {
+          reply = event.reply
+          onDelta(event.reply)
+        }
+      } else if (event.type === 'error') {
+        throw new Error(userHttpError(502, event.detail, 'The assistant could not reply. Please try again.'))
+      }
+    }
+  }
+  return { reply, downloads, llm_provider }
+}
+
+export async function transcribeAudio(blob: Blob, language: string, signal?: AbortSignal): Promise<string> {
+  const form = new FormData()
+  const name = blob.type.includes('mp4') ? 'voice.mp4' : 'voice.webm'
+  form.set('files', blob, name)
+  form.set('language', language)
+  const response = await apiFetch(apiUrl('/api/stt'), {
+    method: 'POST',
+    body: form,
+    headers: await headers(),
+    signal,
+  })
+  const payload = await response.json().catch(() => ({ detail: response.statusText }))
+  if (!response.ok) throw new Error(userHttpError(response.status, payload.detail, 'Could not hear that. Try Voice again.'))
+  return String(payload.text || '').trim()
+}
+
 export async function exportGeneratedText(
   text: string,
   format: string,
