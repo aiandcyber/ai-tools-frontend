@@ -73,6 +73,8 @@ function browserLang(): Lang {
   return match?.id ?? 'en'
 }
 
+const SILENT_WAV = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+
 function stopSpeech() {
   if (activeAudio) {
     activeAudio.pause()
@@ -84,6 +86,16 @@ function stopSpeech() {
     activeObjectUrl = null
   }
   if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+}
+
+function unlockSpeechAudio(): HTMLAudioElement {
+  stopSpeech()
+  const audio = new Audio()
+  audio.preload = 'auto'
+  activeAudio = audio
+  audio.src = SILENT_WAV
+  void audio.play().catch(() => undefined)
+  return audio
 }
 
 function stripForSpeech(raw: string): string {
@@ -110,54 +122,88 @@ function displayTokens(chunk: string): string[] {
   return Array.from(chunk)
 }
 
-async function playSpeechChunk(text: string, lang: Lang): Promise<void> {
-  const spoken = speakableText(text)
-  if (!spoken) return
-  try {
-    const url = await synthesizeSpeech(spoken, lang)
-    if (activeObjectUrl) URL.revokeObjectURL(activeObjectUrl)
+function playOnAudio(audio: HTMLAudioElement, url: string): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      audio.onended = null
+      audio.onerror = null
+      resolve()
+    }
+    audio.onended = done
+    audio.onerror = done
+    if (activeObjectUrl && activeObjectUrl !== url) URL.revokeObjectURL(activeObjectUrl)
     activeObjectUrl = url
-    const audio = new Audio(url)
     activeAudio = audio
-    await new Promise<void>((resolve) => {
-      audio.onended = () => resolve()
-      audio.onerror = () => resolve()
-      void audio.play().catch(() => resolve())
+    audio.src = url
+    void audio.play().catch(() => {
+      void audio.play().catch(done)
     })
-  } catch {
-    if (!('speechSynthesis' in window)) return
-    await new Promise<void>((resolve) => {
-      const utterance = new SpeechSynthesisUtterance(spoken)
-      utterance.lang = speechLang(lang)
-      utterance.onend = () => resolve()
-      utterance.onerror = () => resolve()
-      window.speechSynthesis.speak(utterance)
-    })
-  }
+  })
 }
 
-function createSpeakStream(lang: Lang, onIdle: () => void) {
+async function playBrowserChunk(text: string, lang: Lang): Promise<void> {
+  if (!('speechSynthesis' in window)) return
+  await new Promise<void>((resolve) => {
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = speechLang(lang)
+    utterance.onend = () => resolve()
+    utterance.onerror = () => resolve()
+    window.speechSynthesis.speak(utterance)
+  })
+}
+
+function createSpeakStream(lang: Lang, audio: HTMLAudioElement, onIdle: () => void) {
   let cancelled = false
+  let closed = false
   let pending = ''
-  let started = false
+  let primed = false
+  let kickTimer: ReturnType<typeof window.setTimeout> | null = null
   const queue: string[] = []
   let running = false
+
+  async function playChunk(text: string): Promise<void> {
+    try {
+      const url = await synthesizeSpeech(text, lang)
+      if (cancelled) {
+        URL.revokeObjectURL(url)
+        return
+      }
+      await playOnAudio(audio, url)
+    } catch {
+      if (!cancelled) await playBrowserChunk(text, lang)
+    }
+  }
 
   async function drain() {
     if (running) return
     running = true
-    while (!cancelled && queue.length) {
+    while (!cancelled && !(closed && queue.length === 0)) {
       const chunk = queue.shift()
-      if (chunk) await playSpeechChunk(chunk, lang)
+      if (!chunk) {
+        await new Promise((resolve) => window.setTimeout(resolve, 40))
+        continue
+      }
+      await playChunk(chunk)
     }
     running = false
-    if (!cancelled && queue.length === 0) onIdle()
+    if (!cancelled) onIdle()
   }
 
   function enqueue(text: string) {
     const spoken = speakableText(text)
     if (!spoken || cancelled) return
-    queue.push(spoken)
+    const max = 360
+    let rest = spoken
+    while (rest) {
+      if (rest.length <= max) {
+        queue.push(rest)
+        break
+      }
+      let cut = rest.lastIndexOf(' ', max)
+      if (cut < 80) cut = max
+      queue.push(rest.slice(0, cut))
+      rest = rest.slice(cut).trim()
+    }
     void drain()
   }
 
@@ -179,24 +225,28 @@ function createSpeakStream(lang: Lang, onIdle: () => void) {
     feed(rawDelta: string) {
       if (cancelled) return
       pending += stripForSpeech(rawDelta)
-      if (!started) {
-        const cjk = /[\u3400-\u9fff\u3040-\u30ff]/
-        const first = cjk.test(pending)
-          ? pending.match(/^\s*(\S)/)
-          : pending.match(/^\s*(\S+)/)
-        if (first) {
-          started = true
-          enqueue(first[1])
-          pending = pending.slice(first[0].length)
-        }
-      }
       flushSentences(false)
+      if (!primed && /\S/.test(pending)) {
+        primed = true
+        kickTimer = window.setTimeout(() => {
+          kickTimer = null
+          if (!cancelled) flushSentences(true)
+        }, 400)
+      }
     },
     finish() {
+      if (kickTimer) {
+        window.clearTimeout(kickTimer)
+        kickTimer = null
+      }
       flushSentences(true)
+      closed = true
+      void drain()
     },
     cancel() {
       cancelled = true
+      closed = true
+      if (kickTimer) window.clearTimeout(kickTimer)
       queue.length = 0
       stopSpeech()
     },
@@ -595,17 +645,22 @@ export function App() {
     const text = draft.trim()
     if (!text || busy) return
     const formEl = event.currentTarget
-    if (!(await ensureAuth())) return
+    chatAbortRef.current?.abort()
+    speakStreamRef.current?.cancel()
+    speakStreamRef.current = null
+    const player = speakReplies ? unlockSpeechAudio() : null
+    if (!(await ensureAuth())) {
+      if (player) stopSpeech()
+      return
+    }
     setDraft('')
     setChat((items) => [...items, { role: 'user', text }])
     const form = new FormData(formEl)
     form.set('message', text)
     form.set('language', lang)
-    chatAbortRef.current?.abort()
-    speakStreamRef.current?.cancel()
     const controller = new AbortController()
     chatAbortRef.current = controller
-    const speak = speakReplies ? createSpeakStream(lang, () => setSpeaking(false)) : null
+    const speak = player ? createSpeakStream(lang, player, () => setSpeaking(false)) : null
     speakStreamRef.current = speak
     if (speak) setSpeaking(true)
     const pendingTokens: string[] = []
@@ -627,6 +682,7 @@ export function App() {
         await new Promise((resolve) => window.setTimeout(resolve, 28))
       }
       typing = false
+      if (pendingTokens.length && !controller.signal.aborted) void pumpDisplay()
     }
     setBusy(true)
     try {
