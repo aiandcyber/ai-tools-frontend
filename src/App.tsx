@@ -122,22 +122,56 @@ function displayTokens(chunk: string): string[] {
   return Array.from(chunk)
 }
 
+const TTS_CLIP_CHARS = 3500
+
+function splitSpeakClips(text: string): string[] {
+  const spoken = speakableText(text)
+  if (!spoken) return []
+  const clips: string[] = []
+  let rest = spoken
+  while (rest) {
+    if (rest.length <= TTS_CLIP_CHARS) {
+      clips.push(rest)
+      break
+    }
+    let cut = rest.lastIndexOf(' ', TTS_CLIP_CHARS)
+    if (cut < TTS_CLIP_CHARS * 0.4) cut = TTS_CLIP_CHARS
+    clips.push(rest.slice(0, cut))
+    rest = rest.slice(cut).trim()
+  }
+  return clips
+}
+
 function playOnAudio(audio: HTMLAudioElement, url: string): Promise<void> {
-  return new Promise((resolve) => {
-    const done = () => {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let watchdog = 0
+    const finish = (error?: Error) => {
+      if (settled) return
+      settled = true
+      if (watchdog) window.clearTimeout(watchdog)
       audio.onended = null
       audio.onerror = null
-      resolve()
+      audio.onloadedmetadata = null
+      if (error) reject(error)
+      else resolve()
     }
-    audio.onended = done
-    audio.onerror = done
+    const armWatchdog = () => {
+      if (settled) return
+      if (watchdog) window.clearTimeout(watchdog)
+      const ms = Number.isFinite(audio.duration) && audio.duration > 0
+        ? audio.duration * 1000 + 800
+        : 30_000
+      watchdog = window.setTimeout(() => finish(), ms)
+    }
+    audio.onended = () => finish()
+    audio.onerror = () => finish(new Error('audio play failed'))
+    audio.onloadedmetadata = armWatchdog
     if (activeObjectUrl && activeObjectUrl !== url) URL.revokeObjectURL(activeObjectUrl)
     activeObjectUrl = url
     activeAudio = audio
     audio.src = url
-    void audio.play().catch(() => {
-      void audio.play().catch(done)
-    })
+    void audio.play().then(armWatchdog).catch(() => finish(new Error('audio play failed')))
   })
 }
 
@@ -154,14 +188,19 @@ async function playBrowserChunk(text: string, lang: Lang): Promise<void> {
 
 function createSpeakStream(lang: Lang, audio: HTMLAudioElement, onIdle: () => void) {
   let cancelled = false
-  let closed = false
+  let finished = false
   let pending = ''
-  let primed = false
-  let kickTimer: ReturnType<typeof window.setTimeout> | null = null
+  let startTimer: ReturnType<typeof window.setTimeout> | null = null
   const queue: string[] = []
   let running = false
 
-  async function playChunk(text: string): Promise<void> {
+  function takePending() {
+    const clips = splitSpeakClips(pending)
+    pending = ''
+    if (clips.length) queue.push(...clips)
+  }
+
+  async function playClip(text: string): Promise<void> {
     try {
       const url = await synthesizeSpeech(text, lang)
       if (cancelled) {
@@ -177,76 +216,48 @@ function createSpeakStream(lang: Lang, audio: HTMLAudioElement, onIdle: () => vo
   async function drain() {
     if (running) return
     running = true
-    while (!cancelled && !(closed && queue.length === 0)) {
-      const chunk = queue.shift()
-      if (!chunk) {
-        await new Promise((resolve) => window.setTimeout(resolve, 40))
+    while (!cancelled) {
+      if (!queue.length) {
+        if (finished) break
+        await new Promise((resolve) => window.setTimeout(resolve, 30))
         continue
       }
-      await playChunk(chunk)
+      let clip = queue.shift() as string
+      while (queue.length && clip.length + 1 + queue[0].length <= TTS_CLIP_CHARS) {
+        clip += ` ${queue.shift()}`
+      }
+      await playClip(clip)
     }
     running = false
     if (!cancelled) onIdle()
-  }
-
-  function enqueue(text: string) {
-    const spoken = speakableText(text)
-    if (!spoken || cancelled) return
-    const max = 360
-    let rest = spoken
-    while (rest) {
-      if (rest.length <= max) {
-        queue.push(rest)
-        break
-      }
-      let cut = rest.lastIndexOf(' ', max)
-      if (cut < 80) cut = max
-      queue.push(rest.slice(0, cut))
-      rest = rest.slice(cut).trim()
-    }
-    void drain()
-  }
-
-  function flushSentences(force: boolean) {
-    const sentence = /[\s\S]*?[.!?。！？\n]+/
-    let match = pending.match(sentence)
-    while (match) {
-      enqueue(match[0])
-      pending = pending.slice(match[0].length)
-      match = pending.match(sentence)
-    }
-    if (force && pending.trim()) {
-      enqueue(pending)
-      pending = ''
-    }
   }
 
   return {
     feed(rawDelta: string) {
       if (cancelled) return
       pending += stripForSpeech(rawDelta)
-      flushSentences(false)
-      if (!primed && /\S/.test(pending)) {
-        primed = true
-        kickTimer = window.setTimeout(() => {
-          kickTimer = null
-          if (!cancelled) flushSentences(true)
-        }, 400)
+      if (!startTimer && !running && !finished && /\S/.test(pending)) {
+        startTimer = window.setTimeout(() => {
+          startTimer = null
+          if (cancelled) return
+          takePending()
+          void drain()
+        }, 250)
       }
     },
     finish() {
-      if (kickTimer) {
-        window.clearTimeout(kickTimer)
-        kickTimer = null
+      if (startTimer) {
+        window.clearTimeout(startTimer)
+        startTimer = null
       }
-      flushSentences(true)
-      closed = true
+      takePending()
+      finished = true
       void drain()
     },
     cancel() {
       cancelled = true
-      closed = true
-      if (kickTimer) window.clearTimeout(kickTimer)
+      finished = true
+      if (startTimer) window.clearTimeout(startTimer)
       queue.length = 0
       stopSpeech()
     },

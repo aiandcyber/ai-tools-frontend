@@ -385,39 +385,51 @@ export async function sendChatStream(
   let reply = ''
   let downloads: Download[] = []
   let llm_provider: string | undefined
+  const handleBlock = (part: string) => {
+    const data = part
+      .split('\n')
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trim())
+      .join('')
+    if (!data) return
+    let event: { type?: string; text?: string; detail?: string; downloads?: Download[]; llm_provider?: string; reply?: string }
+    try {
+      event = JSON.parse(data)
+    } catch {
+      return
+    }
+    if (event.type === 'delta' && event.text) {
+      reply += event.text
+      onDelta(event.text)
+    } else if (event.type === 'done') {
+      downloads = event.downloads || []
+      llm_provider = event.llm_provider
+      if (event.reply && !reply) {
+        reply = event.reply
+        onDelta(event.reply)
+      }
+    } else if (event.type === 'error') {
+      throw new Error(userHttpError(502, event.detail, 'The assistant could not reply. Please try again.'))
+    }
+  }
+  const consume = (chunk: string, flush: boolean) => {
+    buffer += chunk
+    const parts = buffer.split('\n\n')
+    if (flush) {
+      buffer = ''
+      for (const part of parts) handleBlock(part)
+      return
+    }
+    buffer = parts.pop() || ''
+    for (const part of parts) handleBlock(part)
+  }
   while (true) {
     const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const parts = buffer.split('\n\n')
-    buffer = parts.pop() || ''
-    for (const part of parts) {
-      const data = part
-        .split('\n')
-        .filter((line) => line.startsWith('data:'))
-        .map((line) => line.slice(5).trim())
-        .join('')
-      if (!data) continue
-      let event: { type?: string; text?: string; detail?: string; downloads?: Download[]; llm_provider?: string; reply?: string }
-      try {
-        event = JSON.parse(data)
-      } catch {
-        continue
-      }
-      if (event.type === 'delta' && event.text) {
-        reply += event.text
-        onDelta(event.text)
-      } else if (event.type === 'done') {
-        downloads = event.downloads || []
-        llm_provider = event.llm_provider
-        if (event.reply && !reply) {
-          reply = event.reply
-          onDelta(event.reply)
-        }
-      } else if (event.type === 'error') {
-        throw new Error(userHttpError(502, event.detail, 'The assistant could not reply. Please try again.'))
-      }
+    if (done) {
+      consume(decoder.decode(), true)
+      break
     }
+    consume(decoder.decode(value, { stream: true }), false)
   }
   return { reply, downloads, llm_provider }
 }
