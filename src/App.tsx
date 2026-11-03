@@ -194,10 +194,26 @@ function createSpeakStream(lang: Lang, audio: HTMLAudioElement, onIdle: () => vo
   const queue: string[] = []
   let running = false
 
-  function takePending() {
-    const clips = splitSpeakClips(pending)
-    pending = ''
+  function enqueueClips(text: string) {
+    const clips = splitSpeakClips(text)
     if (clips.length) queue.push(...clips)
+  }
+
+  function flushReady(force: boolean) {
+    if (!pending.trim()) return
+    if (force) {
+      enqueueClips(pending)
+      pending = ''
+      return
+    }
+    // Speak complete sentences while the model is still streaming.
+    const sentence = /[\s\S]*?[.!?。！？\n]+/
+    let match = pending.match(sentence)
+    while (match) {
+      enqueueClips(match[0])
+      pending = pending.slice(match[0].length)
+      match = pending.match(sentence)
+    }
   }
 
   async function playClip(text: string): Promise<void> {
@@ -236,13 +252,17 @@ function createSpeakStream(lang: Lang, audio: HTMLAudioElement, onIdle: () => vo
     feed(rawDelta: string) {
       if (cancelled) return
       pending += stripForSpeech(rawDelta)
-      if (!startTimer && !running && !finished && /\S/.test(pending)) {
+      flushReady(false)
+      if (!startTimer && !running && !finished && (queue.length > 0 || /\S/.test(pending))) {
         startTimer = window.setTimeout(() => {
           startTimer = null
           if (cancelled) return
-          takePending()
+          // Kick audio quickly; if no sentence ended yet, speak what we have.
+          if (!queue.length) flushReady(true)
           void drain()
         }, 250)
+      } else if (queue.length) {
+        void drain()
       }
     },
     finish() {
@@ -250,7 +270,7 @@ function createSpeakStream(lang: Lang, audio: HTMLAudioElement, onIdle: () => vo
         window.clearTimeout(startTimer)
         startTimer = null
       }
-      takePending()
+      flushReady(true)
       finished = true
       void drain()
     },
