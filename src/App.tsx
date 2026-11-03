@@ -382,6 +382,8 @@ export function App() {
     mode?: 'speech' | 'record'
     target?: 'assistant' | 'search'
     silenceTimer?: ReturnType<typeof window.setTimeout> | null
+    heardSpeech?: boolean
+    stopped?: boolean
   } | null>(null)
   const speakingRef = useRef(false)
   const threadRef = useRef<HTMLDivElement | null>(null)
@@ -831,6 +833,7 @@ export function App() {
 
   function stopVoiceCapture() {
     const session = voiceRef.current
+    if (session) session.stopped = true
     voiceRef.current = null
     setListeningFor(null)
     if (session?.silenceTimer) window.clearTimeout(session.silenceTimer)
@@ -848,16 +851,35 @@ export function App() {
     else setDraft(next)
   }
 
+  /** Only after the user has actually spoken — never from the Voice tap alone. */
   function armVoiceSilenceTimer(session: NonNullable<typeof voiceRef.current>) {
+    if (!session.heardSpeech || session.stopped) return
     if (session.silenceTimer) window.clearTimeout(session.silenceTimer)
     session.silenceTimer = window.setTimeout(() => {
-      if (voiceRef.current !== session) return
+      if (voiceRef.current !== session || session.stopped) return
       if (session.mode === 'record') {
         try { session.recorder?.stop() } catch { stopVoiceCapture() }
         return
       }
       stopVoiceCapture()
-    }, 1800)
+    }, 2500)
+  }
+
+  function restartSpeechRecognition(recognition: Rec, session: NonNullable<typeof voiceRef.current>) {
+    if (session.stopped || voiceRef.current !== session || speakingRef.current) return
+    const tryStart = () => {
+      if (session.stopped || voiceRef.current !== session || speakingRef.current) return
+      try {
+        recognition.start()
+      } catch {
+        // Chrome often throws if start() races onend; retry once, do not kill listening.
+        window.setTimeout(() => {
+          if (session.stopped || voiceRef.current !== session || speakingRef.current) return
+          try { recognition.start() } catch { /* keep UI listening; user can tap stop */ }
+        }, 180)
+      }
+    }
+    window.setTimeout(tryStart, 60)
   }
 
   async function transcribeVoice(blob: Blob, target: 'assistant' | 'search') {
@@ -892,6 +914,8 @@ export function App() {
         mode: 'record',
         target,
         silenceTimer: null,
+        heardSpeech: false,
+        stopped: false,
       }
       voiceRef.current = session
       recorder.ondataavailable = (event) => {
@@ -948,6 +972,8 @@ export function App() {
         mode: 'speech',
         target,
         silenceTimer: null,
+        heardSpeech: false,
+        stopped: false,
       }
       voiceRef.current = session
       recognition.onresult = (event) => {
@@ -962,30 +988,32 @@ export function App() {
           if (event.results[i].isFinal) finalText += `${piece} `
           else interim += piece
         }
+        if (finalText.trim() || interim.trim()) session.heardSpeech = true
         applyVoiceText(target, base, finalText, interim)
         armVoiceSilenceTimer(session)
       }
       recognition.onerror = (event) => {
+        if (session.stopped) return
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
           setError(t(lang, 'micDenied'))
           stopVoiceCapture()
           return
         }
-        if (event.error === 'no-speech') {
-          armVoiceSilenceTimer(session)
-          return
+        // Chrome ends turns with aborted/no-speech; keep listening and let onend restart.
+        if (event.error === 'no-speech' || event.error === 'aborted') return
+        // Avoid switching to MediaRecorder mid-utterance — that looked like an instant stop.
+        if (event.error === 'network' || event.error === 'audio-capture') {
+          setError(t(lang, 'voiceFailed'))
+          stopVoiceCapture()
         }
-        void startVoiceRecorder(target)
       }
       recognition.onend = () => {
-        if (voiceRef.current?.rec === recognition && voiceRef.current.mode === 'speech' && !speakingRef.current) {
-          try { recognition.start() } catch { stopVoiceCapture() }
-        }
+        restartSpeechRecognition(recognition, session)
       }
       try {
         recognition.start()
         setListeningFor(target)
-        armVoiceSilenceTimer(session)
+        // Do not arm silence here — wait until the first transcript.
         return
       } catch {
         /* fall through to recorder */
