@@ -163,8 +163,19 @@ export function formatYoutubeError(error: unknown): string {
   if (isBackendUnreachable(error)) return SERVICE_UNAVAILABLE
   const msg = error instanceof Error ? error.message.trim() : String(error || '')
   const lower = msg.toLowerCase()
-  if (looksTechnical(msg)) return SERVICE_UNAVAILABLE
   if (lower.includes('paste a youtube') || lower.includes('must be a youtube')) return msg
+  if (
+    lower.includes('rate-limit')
+    || lower.includes('rate limited')
+    || lower.includes('429')
+    || lower.includes('blocking')
+    || lower.includes('captions')
+    || lower.includes('try again later')
+    || lower.includes('download youtube on your device')
+  ) {
+    return msg.length > 240 ? YOUTUBE_BLOCKED : msg
+  }
+  if (looksTechnical(msg)) return SERVICE_UNAVAILABLE
   return YOUTUBE_BLOCKED
 }
 

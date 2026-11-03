@@ -62,6 +62,7 @@ const LLM_TOOL_IDS = new Set([
   'youtube_translate',
 ])
 const YOUTUBE_TOOL_IDS = new Set(['youtube_mp4', 'youtube_mp3'])
+const YOUTUBE_LLM_TOOL_IDS = new Set(['youtube_summarize', 'youtube_translate'])
 const HIDDEN_TOOL_IDS = new Set(['youtube_mp4', 'youtube_mp3'])
 const YOUTUBE_USED_KEY = 'tools-youtube-used'
 
@@ -625,7 +626,11 @@ export function App() {
       setSearchHits(result.results || [])
       setSearchMeta(result.meta || {})
     } catch (exc) {
-      setError(YOUTUBE_TOOL_IDS.has(selected.id) ? formatYoutubeError(exc) : formatApiError(exc))
+      setError(
+        YOUTUBE_TOOL_IDS.has(selected.id) || YOUTUBE_LLM_TOOL_IDS.has(selected.id)
+          ? formatYoutubeError(exc)
+          : formatApiError(exc),
+      )
       setSearchHits([])
       setSearchMeta({})
     } finally {
