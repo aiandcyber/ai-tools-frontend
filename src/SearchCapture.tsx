@@ -8,7 +8,7 @@ export type CaptureHit = {
   file?: File
 }
 
-type Tab = 'scan' | 'photo'
+type Tab = 'scan' | 'photo' | 'album'
 
 const BARCODE_FORMATS = new Set([
   'ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'codabar',
@@ -52,7 +52,7 @@ export function SearchCapture({
   onHit,
 }: {
   lang: Lang
-  initialTab?: Tab
+  initialTab?: Exclude<Tab, 'album'>
   onClose: () => void
   onHit: (hit: CaptureHit) => void
 }) {
@@ -77,7 +77,14 @@ export function SearchCapture({
   useEffect(() => {
     let cancelled = false
     let timer = 0
+
     async function start() {
+      if (tab === 'album') {
+        streamRef.current?.getTracks().forEach((track) => track.stop())
+        streamRef.current = null
+        if (videoRef.current) videoRef.current.srcObject = null
+        return
+      }
       streamRef.current?.getTracks().forEach((track) => track.stop())
       streamRef.current = null
       try {
@@ -126,6 +133,12 @@ export function SearchCapture({
     }
   }, [facing, tab, lang])
 
+  useEffect(() => {
+    if (tab !== 'album') return
+    const id = window.setTimeout(() => albumRef.current?.click(), 0)
+    return () => window.clearTimeout(id)
+  }, [tab])
+
   async function onShutter() {
     const video = videoRef.current
     if (!video || video.readyState < 2) {
@@ -160,7 +173,10 @@ export function SearchCapture({
   }
 
   async function onAlbum(file: File | undefined) {
-    if (!file) return
+    if (!file) {
+      if (tab === 'album') setTab('photo')
+      return
+    }
     setBusy(true)
     try {
       const bitmap = await createImageBitmap(file)
@@ -179,53 +195,104 @@ export function SearchCapture({
   return (
     <div className="search-capture" role="dialog" aria-modal="true" aria-label={t(lang, 'searchCamera')}>
       <div className="search-capture-stage">
-        <video ref={videoRef} playsInline muted autoPlay />
+        {tab === 'album' ? (
+          <div className="search-capture-album-empty">
+            <p>{t(lang, 'searchAlbumHint')}</p>
+            <button type="button" className="search-capture-album-cta" disabled={busy} onClick={() => albumRef.current?.click()}>
+              {t(lang, 'searchAlbum')}
+            </button>
+          </div>
+        ) : (
+          <video ref={videoRef} playsInline muted autoPlay />
+        )}
         {tab === 'scan' ? <div className="search-capture-frame" aria-hidden="true" /> : null}
         <div className="search-capture-top">
-          <button type="button" className="search-capture-x" onClick={onClose}>{t(lang, 'searchClose')}</button>
-          {tab === 'photo' ? (
-            <button
-              type="button"
-              className="search-capture-face"
-              onClick={() => setFacing((current) => (current === 'user' ? 'environment' : 'user'))}
-            >
-              {facing === 'user' ? t(lang, 'searchFace') : t(lang, 'searchProductCam')}
-            </button>
-          ) : null}
+          <span className="search-capture-top-spacer" aria-hidden="true" />
+          <button
+            type="button"
+            className="search-capture-close"
+            aria-label={t(lang, 'searchClose')}
+            title={t(lang, 'searchClose')}
+            onClick={onClose}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="M7 7l10 10M17 7L7 17" />
+            </svg>
+          </button>
         </div>
         {tab === 'scan' ? <p className="search-capture-hint">{t(lang, 'searchScanning')}</p> : null}
         {error ? <p className="search-capture-error">{error}</p> : null}
       </div>
-      <div className="search-capture-bar">
-        <button type="button" className="search-capture-album" onClick={() => albumRef.current?.click()} disabled={busy}>
-          {t(lang, 'searchAlbum')}
-        </button>
-        <input
-          ref={albumRef}
-          type="file"
-          accept="image/*"
-          hidden
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            event.target.value = ''
-            void onAlbum(file)
-          }}
-        />
-        {tab === 'photo' ? (
-          <button type="button" className="search-shutter" aria-label={t(lang, 'searchPhoto')} disabled={busy} onClick={() => void onShutter()} />
-        ) : (
-          <span className="search-shutter ghost" aria-hidden="true" />
-        )}
-        <span className="search-capture-album spacer" />
+
+      <div className="search-capture-chrome">
+        <div className="search-capture-bar">
+          <span className="search-capture-side" aria-hidden="true" />
+          {tab === 'photo' ? (
+            <button type="button" className="search-shutter" aria-label={t(lang, 'searchPhoto')} disabled={busy} onClick={() => void onShutter()} />
+          ) : (
+            <span className="search-shutter ghost" aria-hidden="true" />
+          )}
+          <div className="search-capture-side end">
+            {tab === 'photo' ? (
+              <button
+                type="button"
+                className="search-capture-flip"
+                aria-label={facing === 'user' ? t(lang, 'searchProductCam') : t(lang, 'searchFace')}
+                title={t(lang, 'searchFlip')}
+                onClick={() => setFacing((current) => (current === 'user' ? 'environment' : 'user'))}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M16 4h4v4M8 20H4v-4" />
+                  <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M20 8A8 8 0 0 0 7.5 6.5M4 16a8 8 0 0 0 12.5 1.5" />
+                  <circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+                </svg>
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="search-capture-tabs" role="tablist" aria-label={t(lang, 'searchCamera')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'scan'}
+            className={tab === 'scan' ? 'on' : ''}
+            onClick={() => { setTab('scan'); setFacing('environment') }}
+          >
+            {t(lang, 'searchScan')}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'photo'}
+            className={tab === 'photo' ? 'on' : ''}
+            onClick={() => setTab('photo')}
+          >
+            {t(lang, 'searchPhoto')}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'album'}
+            className={tab === 'album' ? 'on' : ''}
+            onClick={() => setTab('album')}
+          >
+            {t(lang, 'searchAlbum')}
+          </button>
+        </div>
       </div>
-      <div className="search-capture-tabs">
-        <button type="button" className={tab === 'scan' ? 'on' : ''} onClick={() => { setTab('scan'); setFacing('environment') }}>
-          {t(lang, 'searchScan')}
-        </button>
-        <button type="button" className={tab === 'photo' ? 'on' : ''} onClick={() => setTab('photo')}>
-          {t(lang, 'searchPhoto')}
-        </button>
-      </div>
+
+      <input
+        ref={albumRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          event.target.value = ''
+          void onAlbum(file)
+        }}
+      />
     </div>
   )
 }
