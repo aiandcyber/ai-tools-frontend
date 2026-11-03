@@ -193,6 +193,7 @@ function createSpeakStream(lang: Lang, audio: HTMLAudioElement, onIdle: () => vo
   let startTimer: ReturnType<typeof window.setTimeout> | null = null
   const queue: string[] = []
   let running = false
+  let prefabricated: { text: string; url: Promise<string | null> } | null = null
 
   function enqueueClips(text: string) {
     const clips = splitSpeakClips(text)
@@ -216,16 +217,20 @@ function createSpeakStream(lang: Lang, audio: HTMLAudioElement, onIdle: () => vo
     }
   }
 
-  async function playClip(text: string): Promise<void> {
+  function takeNextClip(): string | null {
+    if (!queue.length) return null
+    let clip = queue.shift() as string
+    while (queue.length && clip.length + 1 + queue[0].length <= TTS_CLIP_CHARS) {
+      clip += ` ${queue.shift()}`
+    }
+    return clip
+  }
+
+  async function synthesizeClip(text: string): Promise<string | null> {
     try {
-      const url = await synthesizeSpeech(text, lang)
-      if (cancelled) {
-        URL.revokeObjectURL(url)
-        return
-      }
-      await playOnAudio(audio, url)
+      return await synthesizeSpeech(text, lang)
     } catch {
-      if (!cancelled) await playBrowserChunk(text, lang)
+      return null
     }
   }
 
@@ -233,16 +238,45 @@ function createSpeakStream(lang: Lang, audio: HTMLAudioElement, onIdle: () => vo
     if (running) return
     running = true
     while (!cancelled) {
-      if (!queue.length) {
-        if (finished) break
-        await new Promise((resolve) => window.setTimeout(resolve, 30))
+      let clip: string | null = null
+      let urlPromise: Promise<string | null> | null = null
+      if (prefabricated) {
+        clip = prefabricated.text
+        urlPromise = prefabricated.url
+        prefabricated = null
+      } else {
+        clip = takeNextClip()
+        if (!clip) {
+          if (finished) break
+          await new Promise((resolve) => window.setTimeout(resolve, 30))
+          continue
+        }
+        urlPromise = synthesizeClip(clip)
+      }
+
+      const following = takeNextClip()
+      if (following) {
+        prefabricated = { text: following, url: synthesizeClip(following) }
+      }
+
+      const url = await urlPromise
+      if (cancelled) {
+        if (url) URL.revokeObjectURL(url)
+        break
+      }
+      if (!url) {
+        await playBrowserChunk(clip, lang)
         continue
       }
-      let clip = queue.shift() as string
-      while (queue.length && clip.length + 1 + queue[0].length <= TTS_CLIP_CHARS) {
-        clip += ` ${queue.shift()}`
+      try {
+        await playOnAudio(audio, url)
+      } catch {
+        if (!cancelled) await playBrowserChunk(clip, lang)
       }
-      await playClip(clip)
+    }
+    if (prefabricated) {
+      void prefabricated.url.then((url) => { if (url) URL.revokeObjectURL(url) })
+      prefabricated = null
     }
     running = false
     if (!cancelled) onIdle()
@@ -260,7 +294,7 @@ function createSpeakStream(lang: Lang, audio: HTMLAudioElement, onIdle: () => vo
           // Kick audio quickly; if no sentence ended yet, speak what we have.
           if (!queue.length) flushReady(true)
           void drain()
-        }, 250)
+        }, 120)
       } else if (queue.length) {
         void drain()
       }
@@ -279,6 +313,10 @@ function createSpeakStream(lang: Lang, audio: HTMLAudioElement, onIdle: () => vo
       finished = true
       if (startTimer) window.clearTimeout(startTimer)
       queue.length = 0
+      if (prefabricated) {
+        void prefabricated.url.then((url) => { if (url) URL.revokeObjectURL(url) })
+        prefabricated = null
+      }
       stopSpeech()
     },
   }
@@ -306,7 +344,7 @@ export function App() {
   const [draft, setDraft] = useState('')
   const [speakReplies, setSpeakReplies] = useState(true)
   const [speaking, setSpeaking] = useState(false)
-  const [listening, setListening] = useState(false)
+  const [listeningFor, setListeningFor] = useState<null | 'assistant' | 'search'>(null)
   const [loadError, setLoadError] = useState('')
   const [openInfoId, setOpenInfoId] = useState<string | null>(null)
   const [regionMode, setRegionMode] = useState<'auto' | 'manual'>('auto')
@@ -342,8 +380,17 @@ export function App() {
     chunks?: Blob[]
     base?: string
     mode?: 'speech' | 'record'
+    target?: 'assistant' | 'search'
+    silenceTimer?: ReturnType<typeof window.setTimeout> | null
   } | null>(null)
+  const speakingRef = useRef(false)
   const threadRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    speakingRef.current = speaking
+    // Stop the mic while the agent talks so TTS is not transcribed as user input.
+    if (speaking) stopVoiceCapture()
+  }, [speaking])
 
   useEffect(() => {
     localStorage.setItem('tools-lang', lang)
@@ -676,6 +723,7 @@ export function App() {
     const text = draft.trim()
     if (!text || busy) return
     const formEl = event.currentTarget
+    stopVoiceCapture()
     chatAbortRef.current?.abort()
     speakStreamRef.current?.cancel()
     speakStreamRef.current = null
@@ -691,9 +739,18 @@ export function App() {
     form.set('language', lang)
     const controller = new AbortController()
     chatAbortRef.current = controller
-    const speak = player ? createSpeakStream(lang, player, () => setSpeaking(false)) : null
+    const speak = player
+      ? createSpeakStream(lang, player, () => {
+        speakingRef.current = false
+        setSpeaking(false)
+      })
+      : null
     speakStreamRef.current = speak
-    if (speak) setSpeaking(true)
+    if (speak) {
+      speakingRef.current = true
+      setSpeaking(true)
+      stopVoiceCapture()
+    }
     const pendingTokens: string[] = []
     let typing = false
     const pumpDisplay = async () => {
@@ -709,7 +766,6 @@ export function App() {
           }
           return [...withoutRetry, { role: 'assistant', text: next }]
         })
-        speak?.feed(next)
         await new Promise((resolve) => window.setTimeout(resolve, 28))
       }
       typing = false
@@ -720,6 +776,8 @@ export function App() {
       const result = await sendChatStream(
         form,
         (delta) => {
+          // Feed TTS immediately; type the UI separately so speech is not gated on the typer.
+          speak?.feed(delta)
           pendingTokens.push(...displayTokens(delta))
           void pumpDisplay()
         },
@@ -763,10 +821,19 @@ export function App() {
     setBusy(false)
   }
 
+  function clearVoiceSilenceTimer() {
+    const session = voiceRef.current
+    if (session?.silenceTimer) {
+      window.clearTimeout(session.silenceTimer)
+      session.silenceTimer = null
+    }
+  }
+
   function stopVoiceCapture() {
     const session = voiceRef.current
     voiceRef.current = null
-    setListening(false)
+    setListeningFor(null)
+    if (session?.silenceTimer) window.clearTimeout(session.silenceTimer)
     try { session?.rec?.stop() } catch { /* ignore */ }
     try { session?.rec?.abort?.() } catch { /* ignore */ }
     if (session?.recorder && session.recorder.state === 'recording') {
@@ -775,7 +842,25 @@ export function App() {
     session?.stream?.getTracks().forEach((track) => track.stop())
   }
 
-  async function transcribeVoice(blob: Blob) {
+  function applyVoiceText(target: 'assistant' | 'search', base: string, finalText: string, interim: string) {
+    const next = [base, finalText, interim].filter((part) => part.trim()).join(' ').replace(/\s+/g, ' ')
+    if (target === 'search') setSearchQuery(next)
+    else setDraft(next)
+  }
+
+  function armVoiceSilenceTimer(session: NonNullable<typeof voiceRef.current>) {
+    if (session.silenceTimer) window.clearTimeout(session.silenceTimer)
+    session.silenceTimer = window.setTimeout(() => {
+      if (voiceRef.current !== session) return
+      if (session.mode === 'record') {
+        try { session.recorder?.stop() } catch { stopVoiceCapture() }
+        return
+      }
+      stopVoiceCapture()
+    }, 1800)
+  }
+
+  async function transcribeVoice(blob: Blob, target: 'assistant' | 'search') {
     if (!(await ensureAuth())) return
     try {
       const heard = await transcribeAudio(blob, lang)
@@ -783,40 +868,59 @@ export function App() {
         setError(t(lang, 'voiceFailed'))
         return
       }
-      setDraft((prev) => [prev.trim(), heard].filter(Boolean).join(' '))
+      if (target === 'search') {
+        setSearchQuery((prev) => [prev.trim(), heard].filter(Boolean).join(' '))
+      } else {
+        setDraft((prev) => [prev.trim(), heard].filter(Boolean).join(' '))
+      }
     } catch (exc) {
       setError(formatApiError(exc, t(lang, 'voiceFailed')))
     }
   }
 
-  async function startVoiceRecorder() {
+  async function startVoiceRecorder(target: 'assistant' | 'search') {
     stopVoiceCapture()
+    if (speakingRef.current) return
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const recorder = new MediaRecorder(stream)
       const chunks: Blob[] = []
-      voiceRef.current = { recorder, stream, chunks, mode: 'record' }
+      const session: NonNullable<typeof voiceRef.current> = {
+        recorder,
+        stream,
+        chunks,
+        mode: 'record',
+        target,
+        silenceTimer: null,
+      }
+      voiceRef.current = session
       recorder.ondataavailable = (event) => {
         if (event.data.size) chunks.push(event.data)
       }
       recorder.onstop = () => {
+        clearVoiceSilenceTimer()
         stream.getTracks().forEach((track) => track.stop())
-        setListening(false)
+        setListeningFor(null)
         if (voiceRef.current?.recorder === recorder) voiceRef.current = null
         const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
-        if (blob.size > 0) void transcribeVoice(blob)
+        if (blob.size > 0) void transcribeVoice(blob, target)
         else setError(t(lang, 'voiceFailed'))
       }
       recorder.start()
-      setListening(true)
+      setListeningFor(target)
       setError('')
+      // Recorder has no interim events — cap length instead of silence detection.
+      session.silenceTimer = window.setTimeout(() => {
+        if (voiceRef.current !== session) return
+        try { session.recorder?.stop() } catch { stopVoiceCapture() }
+      }, 20_000)
     } catch {
       setError(t(lang, 'micDenied'))
     }
   }
 
-  async function onVoice() {
-    if (listening) {
+  async function startVoice(target: 'assistant' | 'search') {
+    if (listeningFor === target) {
       if (voiceRef.current?.mode === 'record') {
         try { voiceRef.current.recorder?.stop() } catch { stopVoiceCapture() }
         return
@@ -824,6 +928,11 @@ export function App() {
       stopVoiceCapture()
       return
     }
+    if (speakingRef.current) {
+      setError(t(lang, 'voiceWaitSpeak'))
+      return
+    }
+    stopVoiceCapture()
     setError('')
     const ctor = (window as unknown as { SpeechRecognition?: new () => Rec; webkitSpeechRecognition?: new () => Rec }).SpeechRecognition
       || (window as unknown as { webkitSpeechRecognition?: new () => Rec }).webkitSpeechRecognition
@@ -832,9 +941,20 @@ export function App() {
       recognition.lang = speechLang(lang)
       recognition.continuous = true
       recognition.interimResults = true
-      const base = draft
-      voiceRef.current = { rec: recognition, base, mode: 'speech' }
+      const base = target === 'search' ? searchQuery : draft
+      const session: NonNullable<typeof voiceRef.current> = {
+        rec: recognition,
+        base,
+        mode: 'speech',
+        target,
+        silenceTimer: null,
+      }
+      voiceRef.current = session
       recognition.onresult = (event) => {
+        if (speakingRef.current) {
+          stopVoiceCapture()
+          return
+        }
         let finalText = ''
         let interim = ''
         for (let i = 0; i < event.results.length; i += 1) {
@@ -842,7 +962,8 @@ export function App() {
           if (event.results[i].isFinal) finalText += `${piece} `
           else interim += piece
         }
-        setDraft([base, finalText, interim].filter((part) => part.trim()).join(' ').replace(/\s+/g, ' '))
+        applyVoiceText(target, base, finalText, interim)
+        armVoiceSilenceTimer(session)
       }
       recognition.onerror = (event) => {
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
@@ -850,23 +971,35 @@ export function App() {
           stopVoiceCapture()
           return
         }
-        if (event.error === 'no-speech') return
-        void startVoiceRecorder()
+        if (event.error === 'no-speech') {
+          armVoiceSilenceTimer(session)
+          return
+        }
+        void startVoiceRecorder(target)
       }
       recognition.onend = () => {
-        if (voiceRef.current?.rec === recognition && voiceRef.current.mode === 'speech') {
+        if (voiceRef.current?.rec === recognition && voiceRef.current.mode === 'speech' && !speakingRef.current) {
           try { recognition.start() } catch { stopVoiceCapture() }
         }
       }
       try {
         recognition.start()
-        setListening(true)
+        setListeningFor(target)
+        armVoiceSilenceTimer(session)
         return
       } catch {
         /* fall through to recorder */
       }
     }
-    await startVoiceRecorder()
+    await startVoiceRecorder(target)
+  }
+
+  function onVoice() {
+    void startVoice('assistant')
+  }
+
+  function onSearchVoice() {
+    void startVoice('search')
   }
 
   function onResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
@@ -1072,7 +1205,7 @@ export function App() {
                     title={t(lang, 'searchUpload')}
                     onClick={() => uploadRef.current?.click()}
                   >
-                    <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
                       <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
                       <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M14 3v5h5M12 18v-6M9 14l3-3 3 3" />
                     </svg>
@@ -1084,7 +1217,7 @@ export function App() {
                     title={t(lang, 'searchScan')}
                     onClick={() => setCaptureTab('scan')}
                   >
-                    <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
                       <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3" />
                       <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" d="M7 12h10" />
                     </svg>
@@ -1096,9 +1229,21 @@ export function App() {
                     title={t(lang, 'searchCamera')}
                     onClick={() => setCaptureTab('photo')}
                   >
-                    <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
                       <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
                       <circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className={`search-cam${listeningFor === 'search' ? ' listening' : ''}`}
+                    aria-label={listeningFor === 'search' ? t(lang, 'listening') : t(lang, 'searchVoice')}
+                    title={listeningFor === 'search' ? t(lang, 'listening') : t(lang, 'searchVoice')}
+                    onClick={onSearchVoice}
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" />
+                      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M5 11a7 7 0 0 0 14 0M12 18v3" />
                     </svg>
                   </button>
                 </div>
@@ -1504,10 +1649,10 @@ export function App() {
             <div className="row">
               <button
                 type="button"
-                className={`btn-secondary${listening ? ' listening' : ''}`}
-                onClick={() => { void onVoice() }}
+                className={`btn-secondary${listeningFor === 'assistant' ? ' listening' : ''}`}
+                onClick={onVoice}
               >
-                {listening ? t(lang, 'listening') : t(lang, 'voice')}
+                {listeningFor === 'assistant' ? t(lang, 'listening') : t(lang, 'voice')}
               </button>
               <div className="row" style={{ gap: '0.45rem', marginLeft: 'auto' }}>
                 {(busy || speaking) ? (
