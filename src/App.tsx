@@ -27,7 +27,7 @@ import { useRequireAuth } from './useRequireAuth'
 import { CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type NavCategoryId } from './icons'
 import { LANGS, languageOptionLabel, speechLang, t, type Lang } from './i18n'
 import { WORLD_REGIONS, regionLabel } from './regions'
-import { SearchCapture, detectCodes, hitFromCode, type CaptureHit } from './SearchCapture'
+import { SearchCapture, hitFromCode, type CaptureHit } from './SearchCapture'
 
 type Rec = {
   lang: string
@@ -354,7 +354,6 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchBarcode, setSearchBarcode] = useState('')
   const [captureTab, setCaptureTab] = useState<'scan' | 'photo' | null>(null)
-  const uploadRef = useRef<HTMLInputElement | null>(null)
   const [docFormat, setDocFormat] = useState('docx')
   const [docTemplate, setDocTemplate] = useState('')
   const [exportBusy, setExportBusy] = useState(false)
@@ -659,21 +658,6 @@ export function App() {
       }
     }
     return null
-  }
-
-  async function onUploadImage(file: File) {
-    try {
-      const bitmap = await createImageBitmap(file)
-      const codes = await detectCodes(bitmap)
-      bitmap.close()
-      if (codes[0]) {
-        await onCaptureHit({ ...hitFromCode(codes[0].rawValue, codes[0].format), file })
-        return
-      }
-    } catch {
-      // decode on the server instead
-    }
-    await onCaptureHit({ file, mode: 'product' })
   }
 
   async function onCaptureHit(hit: CaptureHit) {
@@ -1160,6 +1144,12 @@ export function App() {
               <h2>{t(lang, 'searchCat')}</h2>
               <p className="search-subtitle">{t(lang, 'searchSubtitle')}</p>
               <div className="google-box">
+                <span className="search-leading" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+                    <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" d="M16.5 16.5L21 21" />
+                  </svg>
+                </span>
                 <input
                   name="query"
                   type="text"
@@ -1176,53 +1166,19 @@ export function App() {
                   aria-label={t(lang, 'searchCat')}
                 />
                 <div className="search-actions">
-                  <input
-                    ref={uploadRef}
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={(event) => {
-                      const file = event.target.files?.[0]
-                      event.target.value = ''
-                      if (file) void onUploadImage(file)
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="search-cam"
-                    aria-label={t(lang, 'searchUpload')}
-                    title={t(lang, 'searchUpload')}
-                    onClick={() => uploadRef.current?.click()}
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-                      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M14 3v5h5M12 18v-6M9 14l3-3 3 3" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="search-cam"
-                    aria-label={t(lang, 'searchScan')}
-                    title={t(lang, 'searchScan')}
-                    onClick={() => setCaptureTab('scan')}
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3" />
-                      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" d="M7 12h10" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="search-cam"
-                    aria-label={t(lang, 'searchCamera')}
-                    title={t(lang, 'searchCamera')}
-                    onClick={() => setCaptureTab('photo')}
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
-                      <circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-                    </svg>
-                  </button>
+                  {searchQuery ? (
+                    <button
+                      type="button"
+                      className="search-cam search-clear"
+                      aria-label={t(lang, 'searchClear')}
+                      title={t(lang, 'searchClear')}
+                      onClick={() => setSearchQuery('')}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" d="M7 7l10 10M17 7L7 17" />
+                      </svg>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className={`search-cam${listeningFor === 'search' ? ' listening' : ''}`}
@@ -1235,8 +1191,20 @@ export function App() {
                       <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M5 11a7 7 0 0 0 14 0M12 18v3" />
                     </svg>
                   </button>
+                  <button
+                    type="button"
+                    className="search-cam"
+                    aria-label={t(lang, 'searchVisual')}
+                    title={t(lang, 'searchVisual')}
+                    onClick={() => setCaptureTab('photo')}
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+                      <circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+                    </svg>
+                  </button>
                 </div>
-                <button type="submit" className="btn-primary" disabled={busy}>
+                <button type="submit" className="btn-primary search-submit" disabled={busy}>
                   {busy ? t(lang, 'working') : t(lang, 'searchAction')}
                 </button>
               </div>
