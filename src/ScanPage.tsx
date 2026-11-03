@@ -1,12 +1,15 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { runTool, type Download } from './api'
 import { SCAN_BASE } from './config'
+import { FileUpload, formatMaxBytes, validateFilesLocally } from './FileUpload'
 import { ToolGlyph } from './icons'
 import { t, type Lang } from './i18n'
 
 type Verdict = {
   ok?: boolean
   labels?: string[]
+  detail?: string
+  stage?: string
 }
 
 const USER_LABELS: Record<string, string> = {
@@ -16,6 +19,8 @@ const USER_LABELS: Record<string, string> = {
   social_engineering: 'Social engineering',
   fraud: 'Fraud',
 }
+
+const VIRUS_MAX_BYTES = 32 * 1024 * 1024
 
 export function safetyTools(lang: Lang) {
   return [
@@ -27,6 +32,7 @@ export function safetyTools(lang: Lang) {
       accept: '*/*',
       multiple: false,
       fields: [],
+      max_upload_bytes: VIRUS_MAX_BYTES,
     },
     {
       id: 'scan_message',
@@ -72,9 +78,59 @@ export function ScanPage({
   const [downloads, setDownloads] = useState<Download[]>([])
   const [showPrivacyLink, setShowPrivacyLink] = useState(false)
   const [reportText, setReportText] = useState('')
+  const [uploadStatus, setUploadStatus] = useState('')
+  const [privacyFile, setPrivacyFile] = useState<File | null>(null)
 
   function syncNames(list: FileList | null) {
     setFileName(list?.[0]?.name || '')
+  }
+
+  async function runVirusCheck(file: File) {
+    if (!SCAN_BASE) {
+      setError(t(lang, 'scanNoServer'))
+      return
+    }
+    setUploadStatus(t(lang, 'uploadCheckType'))
+    const local = await validateFilesLocally([file], '*/*', VIRUS_MAX_BYTES, (stage) => {
+      if (stage === 'type') setUploadStatus(t(lang, 'uploadCheckType'))
+      if (stage === 'size') setUploadStatus(t(lang, 'uploadCheckSize'))
+      if (stage === 'scan') setUploadStatus(t(lang, 'uploadCheckScan'))
+      if (stage === 'ready') setUploadStatus(t(lang, 'uploadCheckReady'))
+    })
+    if (!local.ok) {
+      setError(local.detail)
+      setUploadStatus(t(lang, 'uploadCheckError'))
+      return
+    }
+
+    setUploadStatus(t(lang, 'uploadCheckScan'))
+    const basicBody = new FormData()
+    basicBody.append('file', file, file.name)
+    const basicRes = await fetch(`${SCAN_BASE}/v1/basic-scan`, { method: 'POST', body: basicBody })
+    const basicJson = (await basicRes.json().catch(() => ({}))) as Verdict & { message?: string }
+    if (!basicRes.ok) {
+      setError(basicJson.message || basicJson.detail || t(lang, 'scanFailed'))
+      setUploadStatus(t(lang, 'uploadCheckError'))
+      return
+    }
+    if (basicJson.ok === false) {
+      setVerdict(basicJson)
+      setError(t(lang, 'virusBasicRejected'))
+      setUploadStatus(t(lang, 'uploadCheckError'))
+      return
+    }
+
+    setUploadStatus(t(lang, 'working'))
+    const body = new FormData()
+    body.append('file', file, file.name)
+    const res = await fetch(`${SCAN_BASE}/v1/analyze`, { method: 'POST', body })
+    const json = (await res.json()) as Verdict & { message?: string }
+    if (!res.ok) {
+      setError(json.message || t(lang, 'scanFailed'))
+      return
+    }
+    setVerdict(json)
+    setUploadStatus(t(lang, 'uploadCheckReady'))
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -85,6 +141,7 @@ export function ScanPage({
     setDownloads([])
     setShowPrivacyLink(false)
     setReportText('')
+    setUploadStatus('')
     const file = inputRef.current?.files?.[0]
     const blob = text.trim()
     if ((mode === 'file' || mode === 'privacy') && !file) {
@@ -97,11 +154,15 @@ export function ScanPage({
     }
 
     if (mode === 'privacy') {
-      if (!file) return
+      const chosen = privacyFile || file
+      if (!chosen) {
+        setError(t(lang, 'scanNeedFile'))
+        return
+      }
       setBusy(true)
       try {
         const form = new FormData()
-        form.append('file', file, file.name)
+        form.append('file', chosen, chosen.name)
         const result = await runTool('image_privacy_check', form)
         setMessage(result.message)
         setDownloads(result.downloads)
@@ -122,12 +183,25 @@ export function ScanPage({
       return
     }
 
+    if (mode === 'file') {
+      if (!file) return
+      setBusy(true)
+      try {
+        await runVirusCheck(file)
+      } catch {
+        setError(t(lang, 'scanFailed'))
+        setUploadStatus(t(lang, 'uploadCheckError'))
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+
     if (!SCAN_BASE) {
       setError(t(lang, 'scanNoServer'))
       return
     }
     const body = new FormData()
-    if (file) body.append('file', file, file.name)
     if (blob) body.append('text', blob)
     setBusy(true)
     try {
@@ -165,7 +239,23 @@ export function ScanPage({
           <p>{description}</p>
         </div>
       </div>
-      {(mode === 'file' || mode === 'privacy') && (
+      {mode === 'privacy' && (
+        <FileUpload
+          lang={lang}
+          accept="image/*"
+          maxBytes={20 * 1024 * 1024}
+          toolId="image_privacy_check"
+          category="safety"
+          name="sample"
+          dropHint={t(lang, 'dropHint')}
+          browseLabel={t(lang, 'browse')}
+          emptyLabel={t(lang, 'files')}
+          confirmOnServer
+          onError={(msg) => setError(msg)}
+          onValidated={(files) => setPrivacyFile(files[0] || null)}
+        />
+      )}
+      {mode === 'file' && (
         <div
           className={`dropzone${dragging ? ' dragging' : ''}`}
           onDragEnter={(event) => { event.preventDefault(); setDragging(true) }}
@@ -183,18 +273,19 @@ export function ScanPage({
           <input
             ref={inputRef}
             className="sr-only"
-            name="sample"
+            name="virus-sample"
             type="file"
-            accept={mode === 'privacy' ? 'image/*' : undefined}
             onChange={(event) => syncNames(event.target.files)}
           />
           <p className="dropzone-title">{t(lang, 'dropHint')}</p>
+          <p className="field-hint">{t(lang, 'uploadMaxHint')}: {formatMaxBytes(VIRUS_MAX_BYTES)}</p>
           <div className="dropzone-actions">
             <button type="button" className="btn-secondary" onClick={() => inputRef.current?.click()}>
               {t(lang, 'browse')}
             </button>
             <p className="dropzone-files">{fileName || t(lang, 'files')}</p>
           </div>
+          {uploadStatus ? <p className="upload-status" role="status">{uploadStatus}</p> : null}
         </div>
       )}
       {mode === 'message' && (
@@ -220,6 +311,7 @@ export function ScanPage({
           <pre className="result-body">
             {hit ? t(lang, 'scanHit') : t(lang, 'scanClean')}
             {labels.length ? `\n${labels.join(', ')}` : ''}
+            {verdict.detail ? `\n${verdict.detail}` : ''}
           </pre>
         </div>
       ) : null}

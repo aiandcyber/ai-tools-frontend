@@ -1319,6 +1319,14 @@ button { cursor: pointer; }
 }
 .need-tool-form textarea { min-height: 4.2rem; resize: vertical; }
 .ok { color: #14532d; font-weight: 600; }
+
+.upload-status {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  color: #334155;
+}
+.upload-status.ok { color: #14532d; }
+.upload-status.error { color: #9f1239; font-weight: 600; }
 .empty { color: var(--muted); }
 
 .assistant-head {

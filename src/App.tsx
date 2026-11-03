@@ -28,6 +28,8 @@ import { CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type NavCategor
 import { LANGS, languageOptionLabel, speechLang, t, type Lang } from './i18n'
 import { WORLD_REGIONS, regionLabel } from './regions'
 import { SearchCapture, hitFromCode, type CaptureHit } from './SearchCapture'
+import { FileUpload } from './FileUpload'
+import { openRememberedOutput, readOutputMeta, saveOutputAndRemember } from './outputMemory'
 
 type Rec = {
   lang: string
@@ -1432,18 +1434,23 @@ export function App() {
                     )}
                   </div>
                 </div>
-                <FileDropField
+                <FileUpload
+                  lang={lang}
                   accept={selected.accept}
+                  maxBytes={selected.max_upload_bytes || 20 * 1024 * 1024}
                   multiple={selected.multiple}
+                  toolId={selected.id}
+                  category={selected.category}
                   dropHint={t(lang, 'dropHint')}
                   browseLabel={t(lang, 'browse')}
                   emptyLabel={t(lang, 'files')}
+                  onError={(message) => setError(message)}
                 />
                 <button type="submit" className="btn-primary gt-action" disabled={busy}>
                   {busy ? t(lang, 'working') : selected.title}
                 </button>
                 {error && <p className="error">{error}</p>}
-                <DownloadList items={downloads} />
+                <DownloadList lang={lang} toolId={selected.id} items={downloads} />
               </div>
             </form>
           )}
@@ -1505,9 +1512,13 @@ export function App() {
                 </div>
               </div>
               {selected.accept && (
-                <FileDropField
+                <FileUpload
+                  lang={lang}
                   accept={selected.accept}
+                  maxBytes={selected.max_upload_bytes || 20 * 1024 * 1024}
                   multiple={selected.multiple}
+                  toolId={selected.id}
+                  category={selected.category}
                   dropHint={t(lang, 'dropHint')}
                   browseLabel={t(lang, 'browse')}
                   emptyLabel={t(lang, 'files')}
@@ -1518,6 +1529,7 @@ export function App() {
                       ? () => setCodeCaptureFor(selected.id as 'qr_scan' | 'barcode_scan')
                       : undefined
                   }
+                  onError={(message) => setError(message)}
                 />
               )}
               {codeCaptureFor && (selected.id === 'qr_scan' || selected.id === 'barcode_scan') && (
@@ -1542,7 +1554,7 @@ export function App() {
               </button>
               {error && <p className="error">{error}</p>}
               {message && <p className="ok">{t(lang, 'result')}: {message}</p>}
-              <DownloadList items={downloads} />
+              <DownloadList lang={lang} toolId={selected.id} items={downloads} />
             </form>
           )}
           {category !== 'help' && category !== 'safety' && selected && (selected.id === 'summarize' || selected.id === 'rewrite') && (
@@ -1555,12 +1567,17 @@ export function App() {
                 </div>
               </div>
               {selected.accept && (
-                <FileDropField
+                <FileUpload
+                  lang={lang}
                   accept={selected.accept}
+                  maxBytes={selected.max_upload_bytes || 20 * 1024 * 1024}
                   multiple={selected.multiple}
+                  toolId={selected.id}
+                  category={selected.category}
                   dropHint={t(lang, 'dropHint')}
                   browseLabel={t(lang, 'browse')}
                   emptyLabel={t(lang, 'files')}
+                  onError={(message) => setError(message)}
                 />
               )}
               <div className="field-stack">
@@ -1597,7 +1614,7 @@ export function App() {
                       </button>
                     ))}
                   </div>
-                  <DownloadList items={downloads} />
+                  <DownloadList lang={lang} toolId={selected.id} items={downloads} />
                 </div>
               ) : null}
             </form>
@@ -1644,12 +1661,17 @@ export function App() {
                   ))}
                 </div>
                 <input type="hidden" name="template_preset" value={docTemplate} />
-                <FileDropField
+                <FileUpload
+                  lang={lang}
                   accept=".docx,.txt,.md"
+                  maxBytes={selected.max_upload_bytes || 20 * 1024 * 1024}
                   multiple={false}
+                  toolId={selected.id}
+                  category={selected.category}
                   dropHint="Upload your own template (optional)"
                   browseLabel={t(lang, 'browse')}
                   emptyLabel="No template file selected"
+                  onError={(message) => setError(message)}
                 />
               </div>
               <button type="submit" className="btn-primary" disabled={busy} style={{ background: accent.accent }}>
@@ -1657,7 +1679,7 @@ export function App() {
               </button>
               {error && <p className="error">{error}</p>}
               {message && <p className="ok">{t(lang, 'result')}: {message}</p>}
-              <DownloadList items={downloads} />
+              <DownloadList lang={lang} toolId={selected.id} items={downloads} />
             </form>
           )}
         </main>
@@ -1874,7 +1896,7 @@ function YoutubeToolForm({
         </p>
       )}
       {message && <p className="ok">{resultLabel}: {message}</p>}
-      <DownloadList items={downloads} />
+      <DownloadList lang="en" toolId={tool.id} items={downloads} />
     </form>
   )
 }
@@ -1928,93 +1950,66 @@ function ToolFields({ fields }: { fields: Tool['fields'] }) {
   )
 }
 
-function FileDropField({
-  accept,
-  multiple,
-  dropHint,
-  browseLabel,
-  emptyLabel,
-  assignedFile = null,
-  cameraLabel,
-  onCameraClick,
+function DownloadList({
+  items,
+  lang,
+  toolId,
 }: {
-  accept: string
-  multiple: boolean
-  dropHint: string
-  browseLabel: string
-  emptyLabel: string
-  assignedFile?: File | null
-  cameraLabel?: string
-  onCameraClick?: () => void
+  items: Download[]
+  lang: Lang
+  toolId: string
 }) {
-  const inputRef = useRef<HTMLInputElement | null>(null)
-  const [names, setNames] = useState('')
-  const [dragging, setDragging] = useState(false)
-
-  function syncNames(list: FileList | null) {
-    if (!list || !list.length) {
-      setNames('')
-      return
-    }
-    setNames(Array.from(list).map((file) => file.name).join(', '))
-  }
-
-  useEffect(() => {
-    if (!assignedFile || !inputRef.current) return
-    const transfer = new DataTransfer()
-    transfer.items.add(assignedFile)
-    inputRef.current.files = transfer.files
-    syncNames(transfer.files)
-  }, [assignedFile])
-
+  const [note, setNote] = useState('')
+  const meta = readOutputMeta(toolId)
+  if (!items.length && !meta) return null
   return (
-    <div
-      className={`dropzone${dragging ? ' dragging' : ''}`}
-      onDragEnter={(event) => { event.preventDefault(); setDragging(true) }}
-      onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(event) => {
-        event.preventDefault()
-        setDragging(false)
-        const input = inputRef.current
-        if (!input || !event.dataTransfer.files.length) return
-        input.files = event.dataTransfer.files
-        syncNames(event.dataTransfer.files)
-      }}
-    >
-      <input
-        ref={inputRef}
-        className="sr-only"
-        name="files"
-        type="file"
-        accept={accept}
-        multiple={multiple}
-        onChange={(event) => syncNames(event.target.files)}
-      />
-      <p className="dropzone-title">{dropHint}</p>
-      <div className="dropzone-actions">
-        <button type="button" className="btn-secondary" onClick={() => inputRef.current?.click()}>
-          {browseLabel}
-        </button>
-        {cameraLabel && onCameraClick ? (
-          <button type="button" className="btn-secondary" onClick={onCameraClick}>
-            {cameraLabel}
+    <div className="download-panel">
+      {items.length ? (
+        <ul className="downloads">
+          {items.map((item) => (
+            <li key={item.url}>
+              <a href={apiUrl(item.url)}>{item.name}</a>{' '}
+              <button
+                type="button"
+                className="linkish"
+                onClick={() => {
+                  void saveOutputAndRemember(toolId, apiUrl(item.url), item.name).then((result) => {
+                    if (result.ok) setNote(`${t(lang, 'saveRememberOutput')}: ${result.name}`)
+                    else if (result.reason === 'missing' || result.reason === 'download_failed') {
+                      setNote(t(lang, 'rememberedMissing'))
+                    } else if (result.reason === 'no_path_memory') {
+                      setNote(t(lang, 'saveRememberOutput'))
+                    } else {
+                      setNote('')
+                    }
+                  })
+                }}
+              >
+                {t(lang, 'saveRememberOutput')}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {meta ? (
+        <p className="field-hint">
+          <button
+            type="button"
+            className="linkish"
+            onClick={() => {
+              void openRememberedOutput(toolId).then((result) => {
+                if (result.ok) setNote(result.name)
+                else setNote(t(lang, 'rememberedMissing'))
+              })
+            }}
+          >
+            {t(lang, 'openRememberedOutput')}
           </button>
-        ) : null}
-        <p className="dropzone-files">{names || emptyLabel}</p>
-      </div>
+          {meta.name ? ` (${meta.name})` : ''}
+        </p>
+      ) : null}
+      {note ? <p className="field-hint">{note}</p> : null}
     </div>
-  )
-}
-
-function DownloadList({ items }: { items: Download[] }) {
-  if (!items.length) return null
-  return (
-    <ul className="downloads">
-      {items.map((item) => (
-        <li key={item.url}><a href={apiUrl(item.url)}>{item.name}</a></li>
-      ))}
-    </ul>
   )
 }
 

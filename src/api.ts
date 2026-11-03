@@ -17,6 +17,7 @@ export type Tool = {
   accept: string
   multiple: boolean
   fields: Field[]
+  max_upload_bytes?: number
 }
 
 export type Catalog = {
