@@ -381,8 +381,6 @@ export function App() {
     base?: string
     mode?: 'speech' | 'record'
     target?: 'assistant' | 'search'
-    silenceTimer?: ReturnType<typeof window.setTimeout> | null
-    heardSpeech?: boolean
     stopped?: boolean
   } | null>(null)
   const speakingRef = useRef(false)
@@ -823,20 +821,11 @@ export function App() {
     setBusy(false)
   }
 
-  function clearVoiceSilenceTimer() {
-    const session = voiceRef.current
-    if (session?.silenceTimer) {
-      window.clearTimeout(session.silenceTimer)
-      session.silenceTimer = null
-    }
-  }
-
   function stopVoiceCapture() {
     const session = voiceRef.current
     if (session) session.stopped = true
     voiceRef.current = null
     setListeningFor(null)
-    if (session?.silenceTimer) window.clearTimeout(session.silenceTimer)
     try { session?.rec?.stop() } catch { /* ignore */ }
     try { session?.rec?.abort?.() } catch { /* ignore */ }
     if (session?.recorder && session.recorder.state === 'recording') {
@@ -849,20 +838,6 @@ export function App() {
     const next = [base, finalText, interim].filter((part) => part.trim()).join(' ').replace(/\s+/g, ' ')
     if (target === 'search') setSearchQuery(next)
     else setDraft(next)
-  }
-
-  /** Only after the user has actually spoken — never from the Voice tap alone. */
-  function armVoiceSilenceTimer(session: NonNullable<typeof voiceRef.current>) {
-    if (!session.heardSpeech || session.stopped) return
-    if (session.silenceTimer) window.clearTimeout(session.silenceTimer)
-    session.silenceTimer = window.setTimeout(() => {
-      if (voiceRef.current !== session || session.stopped) return
-      if (session.mode === 'record') {
-        try { session.recorder?.stop() } catch { stopVoiceCapture() }
-        return
-      }
-      stopVoiceCapture()
-    }, 2500)
   }
 
   function restartSpeechRecognition(recognition: Rec, session: NonNullable<typeof voiceRef.current>) {
@@ -913,8 +888,6 @@ export function App() {
         chunks,
         mode: 'record',
         target,
-        silenceTimer: null,
-        heardSpeech: false,
         stopped: false,
       }
       voiceRef.current = session
@@ -922,7 +895,6 @@ export function App() {
         if (event.data.size) chunks.push(event.data)
       }
       recorder.onstop = () => {
-        clearVoiceSilenceTimer()
         stream.getTracks().forEach((track) => track.stop())
         setListeningFor(null)
         if (voiceRef.current?.recorder === recorder) voiceRef.current = null
@@ -933,11 +905,6 @@ export function App() {
       recorder.start()
       setListeningFor(target)
       setError('')
-      // Recorder has no interim events — cap length instead of silence detection.
-      session.silenceTimer = window.setTimeout(() => {
-        if (voiceRef.current !== session) return
-        try { session.recorder?.stop() } catch { stopVoiceCapture() }
-      }, 20_000)
     } catch {
       setError(t(lang, 'micDenied'))
     }
@@ -971,8 +938,6 @@ export function App() {
         base,
         mode: 'speech',
         target,
-        silenceTimer: null,
-        heardSpeech: false,
         stopped: false,
       }
       voiceRef.current = session
@@ -988,9 +953,7 @@ export function App() {
           if (event.results[i].isFinal) finalText += `${piece} `
           else interim += piece
         }
-        if (finalText.trim() || interim.trim()) session.heardSpeech = true
         applyVoiceText(target, base, finalText, interim)
-        armVoiceSilenceTimer(session)
       }
       recognition.onerror = (event) => {
         if (session.stopped) return
@@ -1001,7 +964,6 @@ export function App() {
         }
         // Chrome ends turns with aborted/no-speech; keep listening and let onend restart.
         if (event.error === 'no-speech' || event.error === 'aborted') return
-        // Avoid switching to MediaRecorder mid-utterance — that looked like an instant stop.
         if (event.error === 'network' || event.error === 'audio-capture') {
           setError(t(lang, 'voiceFailed'))
           stopVoiceCapture()
@@ -1013,7 +975,6 @@ export function App() {
       try {
         recognition.start()
         setListeningFor(target)
-        // Do not arm silence here — wait until the first transcript.
         return
       } catch {
         /* fall through to recorder */
