@@ -291,10 +291,12 @@ button { cursor: pointer; }
 }
 
 .search-actions {
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, 52px);
+  grid-template-rows: repeat(2, 52px);
   gap: 0;
+  flex: 0 0 auto;
+  align-content: center;
 }
 
 .search-cam {
