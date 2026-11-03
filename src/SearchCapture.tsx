@@ -9,6 +9,7 @@ export type CaptureHit = {
 }
 
 type Tab = 'scan' | 'photo' | 'album'
+export type PhotoTarget = 'face' | 'product'
 
 const BARCODE_FORMATS = new Set([
   'ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'codabar',
@@ -45,14 +46,20 @@ export function hitFromCode(rawValue: string, format: string): CaptureHit {
   return { query: value, mode: 'people' }
 }
 
+function modeFromTarget(target: PhotoTarget): 'people' | 'product' {
+  return target === 'face' ? 'people' : 'product'
+}
+
 export function SearchCapture({
   lang,
   initialTab = 'scan',
+  initialPhotoTarget = null,
   onClose,
   onHit,
 }: {
   lang: Lang
   initialTab?: Exclude<Tab, 'album'>
+  initialPhotoTarget?: PhotoTarget | null
   onClose: () => void
   onHit: (hit: CaptureHit) => void
 }) {
@@ -62,9 +69,16 @@ export function SearchCapture({
   const onHitRef = useRef(onHit)
   onHitRef.current = onHit
   const [tab, setTab] = useState<Tab>(initialTab)
-  const [facing, setFacing] = useState<'environment' | 'user'>('environment')
+  const [photoTarget, setPhotoTarget] = useState<PhotoTarget | null>(initialPhotoTarget)
+  const facing = photoTarget === 'face' ? 'user' : 'environment'
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const needsTarget = tab === 'photo' || tab === 'album'
+
+  function choosePhotoTarget(next: PhotoTarget) {
+    setPhotoTarget(next)
+    setError('')
+  }
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -102,7 +116,7 @@ export function SearchCapture({
           video.srcObject = stream
           await video.play()
         }
-        setError('')
+        setError((current) => (current === t(lang, 'searchChooseFaceOrProduct') ? current : ''))
       } catch {
         setError(t(lang, 'searchCameraNeed'))
       }
@@ -135,11 +149,16 @@ export function SearchCapture({
 
   useEffect(() => {
     if (tab !== 'album') return
+    if (!photoTarget) return
     const id = window.setTimeout(() => albumRef.current?.click(), 0)
     return () => window.clearTimeout(id)
-  }, [tab])
+  }, [tab, photoTarget])
 
   async function onShutter() {
+    if (!photoTarget) {
+      setError(t(lang, 'searchChooseFaceOrProduct'))
+      return
+    }
     const video = videoRef.current
     if (!video || video.readyState < 2) {
       setError(t(lang, 'searchCameraNeed'))
@@ -159,14 +178,12 @@ export function SearchCapture({
       const bitmap = await createImageBitmap(file)
       const codes = await detectCodes(bitmap)
       bitmap.close()
+      const mode = modeFromTarget(photoTarget)
       if (codes[0]) {
         onHit({ ...hitFromCode(codes[0].rawValue, codes[0].format), file })
         return
       }
-      onHit({
-        file,
-        mode: facing === 'user' ? 'people' : 'product',
-      })
+      onHit({ file, mode })
     } finally {
       setBusy(false)
     }
@@ -177,19 +194,29 @@ export function SearchCapture({
       if (tab === 'album') setTab('photo')
       return
     }
+    if (!photoTarget) {
+      setError(t(lang, 'searchChooseFaceOrProduct'))
+      return
+    }
     setBusy(true)
     try {
       const bitmap = await createImageBitmap(file)
       const codes = await detectCodes(bitmap)
       bitmap.close()
+      const mode = modeFromTarget(photoTarget)
       if (codes[0]) {
         onHit({ ...hitFromCode(codes[0].rawValue, codes[0].format), file })
         return
       }
-      onHit({ file, mode: 'product' })
+      onHit({ file, mode })
     } finally {
       setBusy(false)
     }
+  }
+
+  function openAlbumTab() {
+    setTab('album')
+    setError(photoTarget ? '' : t(lang, 'searchChooseFaceOrProduct'))
   }
 
   return (
@@ -197,8 +224,13 @@ export function SearchCapture({
       <div className="search-capture-stage">
         {tab === 'album' ? (
           <div className="search-capture-album-empty">
-            <p>{t(lang, 'searchAlbumHint')}</p>
-            <button type="button" className="search-capture-album-cta" disabled={busy} onClick={() => albumRef.current?.click()}>
+            <p>{photoTarget ? t(lang, 'searchAlbumHint') : t(lang, 'searchChooseFaceOrProduct')}</p>
+            <button
+              type="button"
+              className="search-capture-album-cta"
+              disabled={busy || !photoTarget}
+              onClick={() => albumRef.current?.click()}
+            >
               {t(lang, 'searchAlbum')}
             </button>
           </div>
@@ -225,6 +257,27 @@ export function SearchCapture({
       </div>
 
       <div className="search-capture-chrome">
+        {needsTarget ? (
+          <div className="search-capture-targets" role="group" aria-label={t(lang, 'searchChooseFaceOrProduct')}>
+            <button
+              type="button"
+              className={photoTarget === 'face' ? 'on' : ''}
+              aria-pressed={photoTarget === 'face'}
+              onClick={() => choosePhotoTarget('face')}
+            >
+              {t(lang, 'searchFace')}
+            </button>
+            <button
+              type="button"
+              className={photoTarget === 'product' ? 'on' : ''}
+              aria-pressed={photoTarget === 'product'}
+              onClick={() => choosePhotoTarget('product')}
+            >
+              {t(lang, 'searchProductCam')}
+            </button>
+          </div>
+        ) : null}
+
         <div className="search-capture-bar">
           <span className="search-capture-side" aria-hidden="true" />
           {tab === 'photo' ? (
@@ -232,23 +285,7 @@ export function SearchCapture({
           ) : (
             <span className="search-shutter ghost" aria-hidden="true" />
           )}
-          <div className="search-capture-side end">
-            {tab === 'photo' ? (
-              <button
-                type="button"
-                className="search-capture-flip"
-                aria-label={facing === 'user' ? t(lang, 'searchProductCam') : t(lang, 'searchFace')}
-                title={t(lang, 'searchFlip')}
-                onClick={() => setFacing((current) => (current === 'user' ? 'environment' : 'user'))}
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M16 4h4v4M8 20H4v-4" />
-                  <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M20 8A8 8 0 0 0 7.5 6.5M4 16a8 8 0 0 0 12.5 1.5" />
-                  <circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
-                </svg>
-              </button>
-            ) : null}
-          </div>
+          <span className="search-capture-side end" aria-hidden="true" />
         </div>
 
         <div className="search-capture-tabs" role="tablist" aria-label={t(lang, 'searchCamera')}>
@@ -257,7 +294,7 @@ export function SearchCapture({
             role="tab"
             aria-selected={tab === 'scan'}
             className={tab === 'scan' ? 'on' : ''}
-            onClick={() => { setTab('scan'); setFacing('environment') }}
+            onClick={() => { setTab('scan'); setError('') }}
           >
             {t(lang, 'searchScan')}
           </button>
@@ -266,7 +303,7 @@ export function SearchCapture({
             role="tab"
             aria-selected={tab === 'photo'}
             className={tab === 'photo' ? 'on' : ''}
-            onClick={() => setTab('photo')}
+            onClick={() => { setTab('photo'); setError('') }}
           >
             {t(lang, 'searchPhoto')}
           </button>
@@ -275,7 +312,7 @@ export function SearchCapture({
             role="tab"
             aria-selected={tab === 'album'}
             className={tab === 'album' ? 'on' : ''}
-            onClick={() => setTab('album')}
+            onClick={openAlbumTab}
           >
             {t(lang, 'searchAlbum')}
           </button>

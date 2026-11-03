@@ -664,11 +664,14 @@ export function App() {
     let resolved = hit
     if (!resolved.query && !resolved.barcode && resolved.file) {
       const fromTool = await decodeImageFile(resolved.file)
-      if (fromTool) resolved = { ...fromTool, file: resolved.file }
+      if (fromTool) resolved = { ...fromTool, file: resolved.file, mode: fromTool.mode || resolved.mode }
     }
     setCaptureTab(null)
+    const mode = resolved.barcode
+      ? 'product'
+      : (resolved.mode === 'people' || resolved.mode === 'product' ? resolved.mode : searchKind)
+    if (mode === 'people' || mode === 'product') setSearchKind(mode)
     if (resolved.query || resolved.barcode) {
-      const mode = resolved.barcode ? 'product' : searchKind
       if (!mode) {
         setSearchQuery(resolved.query || '')
         setSearchBarcode(resolved.barcode || '')
@@ -1210,9 +1213,14 @@ export function App() {
               </div>
               {captureTab ? (
                 <SearchCapture
-                  key={captureTab}
+                  key={`${captureTab}-${searchKind}`}
                   lang={lang}
                   initialTab={captureTab}
+                  initialPhotoTarget={
+                    searchKind === 'people' ? 'face'
+                      : searchKind === 'product' ? 'product'
+                        : null
+                  }
                   onClose={() => setCaptureTab(null)}
                   onHit={(hit) => void onCaptureHit(hit)}
                 />
