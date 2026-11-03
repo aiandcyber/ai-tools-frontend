@@ -1,4 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react'
+import { runTool, type Download } from './api'
 import { SCAN_BASE } from './config'
 import { ToolGlyph } from './icons'
 import { t, type Lang } from './i18n'
@@ -53,10 +54,12 @@ export function ScanPage({
   lang,
   mode,
   accent,
+  onOpenRemovePrivacy,
 }: {
   lang: Lang
-  mode: 'file' | 'message'
+  mode: 'file' | 'message' | 'privacy'
   accent: string
+  onOpenRemovePrivacy?: () => void
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [busy, setBusy] = useState(false)
@@ -65,6 +68,10 @@ export function ScanPage({
   const [text, setText] = useState('')
   const [fileName, setFileName] = useState('')
   const [dragging, setDragging] = useState(false)
+  const [message, setMessage] = useState('')
+  const [downloads, setDownloads] = useState<Download[]>([])
+  const [showPrivacyLink, setShowPrivacyLink] = useState(false)
+  const [reportText, setReportText] = useState('')
 
   function syncNames(list: FileList | null) {
     setFileName(list?.[0]?.name || '')
@@ -74,9 +81,13 @@ export function ScanPage({
     event.preventDefault()
     setError('')
     setVerdict(null)
+    setMessage('')
+    setDownloads([])
+    setShowPrivacyLink(false)
+    setReportText('')
     const file = inputRef.current?.files?.[0]
     const blob = text.trim()
-    if (mode === 'file' && !file) {
+    if ((mode === 'file' || mode === 'privacy') && !file) {
       setError(t(lang, 'scanNeedFile'))
       return
     }
@@ -84,6 +95,33 @@ export function ScanPage({
       setError(t(lang, 'scanNeedText'))
       return
     }
+
+    if (mode === 'privacy') {
+      if (!file) return
+      setBusy(true)
+      try {
+        const form = new FormData()
+        form.append('file', file, file.name)
+        const result = await runTool('image_privacy_check', form)
+        setMessage(result.message)
+        setDownloads(result.downloads)
+        setShowPrivacyLink(Boolean(result.meta?.privacy_sensitive || result.meta?.open_tool === 'image_strip_exif'))
+        if (result.downloads[0]?.url) {
+          try {
+            const res = await fetch(result.downloads[0].url)
+            setReportText(await res.text())
+          } catch {
+            setReportText('')
+          }
+        }
+      } catch {
+        setError(t(lang, 'scanFailed'))
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+
     if (!SCAN_BASE) {
       setError(t(lang, 'scanNoServer'))
       return
@@ -109,8 +147,14 @@ export function ScanPage({
 
   const labels = friendlyLabels(verdict?.labels)
   const hit = Boolean(verdict && (verdict.ok === false || labels.length))
-  const title = mode === 'file' ? t(lang, 'scanFileTool') : t(lang, 'scanMsgTool')
-  const description = mode === 'file' ? t(lang, 'scanFileDesc') : t(lang, 'scanMsgDesc')
+  const title =
+    mode === 'file' ? t(lang, 'scanFileTool')
+      : mode === 'message' ? t(lang, 'scanMsgTool')
+        : 'Image Privacy Check'
+  const description =
+    mode === 'file' ? t(lang, 'scanFileDesc')
+      : mode === 'message' ? t(lang, 'scanMsgDesc')
+        : 'Check privacy information such as your GPS location and other metadata in your image.'
 
   return (
     <form className="tool-form modern-tool" onSubmit={onSubmit}>
@@ -121,7 +165,7 @@ export function ScanPage({
           <p>{description}</p>
         </div>
       </div>
-      {mode === 'file' && (
+      {(mode === 'file' || mode === 'privacy') && (
         <div
           className={`dropzone${dragging ? ' dragging' : ''}`}
           onDragEnter={(event) => { event.preventDefault(); setDragging(true) }}
@@ -141,6 +185,7 @@ export function ScanPage({
             className="sr-only"
             name="sample"
             type="file"
+            accept={mode === 'privacy' ? 'image/*' : undefined}
             onChange={(event) => syncNames(event.target.files)}
           />
           <p className="dropzone-title">{t(lang, 'dropHint')}</p>
@@ -155,12 +200,12 @@ export function ScanPage({
       {mode === 'message' && (
         <div className="field-stack">
           <label className="field-card">
-            <span className="field-label">{t(lang, 'orPaste')}</span>
             <textarea
               rows={7}
               value={text}
               onChange={(event) => setText(event.target.value)}
               placeholder={t(lang, 'pastePlaceholder')}
+              aria-label={t(lang, 'orPaste')}
             />
           </label>
         </div>
@@ -177,6 +222,30 @@ export function ScanPage({
             {labels.length ? `\n${labels.join(', ')}` : ''}
           </pre>
         </div>
+      ) : null}
+      {mode === 'privacy' && message ? <p className="ok">{t(lang, 'result')}: {message}</p> : null}
+      {mode === 'privacy' && showPrivacyLink && onOpenRemovePrivacy ? (
+        <p className="field-hint">
+          {t(lang, 'privacySensitiveHint')}{' '}
+          <button type="button" className="linkish" onClick={onOpenRemovePrivacy}>
+            {t(lang, 'openRemovePrivacy')}
+          </button>
+        </p>
+      ) : null}
+      {mode === 'privacy' && reportText ? (
+        <div className="result-card" role="status">
+          <h3>{t(lang, 'result')}</h3>
+          <pre className="result-body">{reportText}</pre>
+        </div>
+      ) : null}
+      {mode === 'privacy' && downloads.length > 0 ? (
+        <ul className="downloads">
+          {downloads.map((item) => (
+            <li key={item.url}>
+              <a href={item.url} download={item.name}>{item.name}</a>
+            </li>
+          ))}
+        </ul>
       ) : null}
     </form>
   )

@@ -1,7 +1,7 @@
 export const CATEGORIES = ['search', 'pdf', 'image', 'media', 'utility', 'ai'] as const
 
 /** Top category tabs — AI is home (shows search). No separate Search tab. */
-export const NAV_CATEGORIES = ['ai', 'safety', 'media', 'pdf', 'image', 'utility', 'help'] as const
+export const NAV_CATEGORIES = ['ai', 'media', 'safety', 'pdf', 'image', 'utility', 'help'] as const
 
 export type CategoryId = (typeof CATEGORIES)[number]
 export type NavCategoryId = (typeof NAV_CATEGORIES)[number]

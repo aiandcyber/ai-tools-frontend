@@ -73,6 +73,8 @@ export type SearchMeta = {
   buy_recommendation?: string
   buy_reasons?: string[]
   missing_fields?: string[]
+  privacy_sensitive?: boolean
+  open_tool?: string
 }
 
 let tokenGetter: (() => Promise<string>) | null = null

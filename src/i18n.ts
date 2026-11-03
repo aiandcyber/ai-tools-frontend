@@ -87,11 +87,11 @@ const text: Record<Lang, Record<string, string>> = {
     productYes: 'Yes',
     productNo: 'No',
     productUnknown: 'Unknown',
-    pdf: 'Documents / PDF', office: 'Office', image: 'Images', media: 'Audio/Video', utility: 'Utilities', ai: 'AI',
+    pdf: 'Documents / PDF', office: 'Office', image: 'Images', media: 'YouTube/Audio/Video', utility: 'Utilities', ai: 'AI',
     help: 'Need New Tool?',
     dropHint: 'Drag & drop a file here, or browse',
     browse: 'Browse files',
-    orPaste: 'Or paste text',
+    orPaste: 'Message',
     detectLang: 'Detect language',
     targetLang: 'Target language',
     pastePlaceholder: 'Enter or paste text here',
@@ -116,6 +116,12 @@ const text: Record<Lang, Record<string, string>> = {
     contactCaptchaNeeded: 'Please complete the check before sending',
     youtubeSignInHint: 'The first conversion is free without signing in. After that, a simple Sign in is required. It is still free — Sign in is only to satisfy the YouTube backend requirement.',
     youtubeInvestigate: 'Send a message to us to investigate',
+    youtubeDownloadLead: 'We do not support downloading YouTube video from the server. You can download on your personal device for personal listening again.',
+    youtubeDownloadWindows: 'Windows application',
+    youtubeDownloadMobile: 'Mobile app',
+    youtubeDownloadComingSoon: 'Coming soon',
+    openRemovePrivacy: 'Remove Your Privacy',
+    privacySensitiveHint: 'Privacy metadata was found. Use Remove Your Privacy to strip GPS and other details.',
     serviceUnavailable: 'This service is temporarily unavailable. Please try again in a moment.',
     reconnecting: 'This service is temporarily unavailable. We will keep trying.',
     somethingWrong: 'Something went wrong. Please try again.',
@@ -125,9 +131,9 @@ const text: Record<Lang, Record<string, string>> = {
     voiceFailed: 'Could not hear that. Try Voice again.',
     voiceWaitSpeak: 'Wait until the assistant finishes speaking, then try Voice.',
     safety: 'Scam & Virus Check',
-    scanFileTool: 'Check file',
+    scanFileTool: 'Virus Check',
     scanFileDesc: 'Upload a file to check for virus.',
-    scanMsgTool: 'Check message',
+    scanMsgTool: 'Scam Check',
     scanMsgDesc: 'Paste SMS, email, or chat text to check for scam.',
     scanNeedFile: 'Choose a file.',
     scanNeedText: 'Paste a message.',
@@ -191,15 +197,26 @@ const text: Record<Lang, Record<string, string>> = {
     searchScanning: 'Point at a QR code or barcode',
     searchNoCode: 'No QR or barcode found in that photo.',
     searchNeedName: 'Enter a name to search that person.',
-    pdf: 'Documents / PDF', office: 'Office', image: 'Images', media: 'Audio/Video', utility: 'Utilities', ai: 'AI',
+    pdf: 'Documents / PDF', office: 'Office', image: 'Images', media: 'YouTube/Audio/Video', utility: 'Utilities', ai: 'AI',
     help: 'Need New Tool?',
     dropHint: 'Drag & drop a file here, or browse',
     browse: 'Browse files',
-    orPaste: 'Or paste text',
+    orPaste: '訊息',
     detectLang: 'Detect language',
     targetLang: 'Target language',
     pastePlaceholder: 'Enter or paste text here',
     stop: 'Stop',
+    youtubeDownloadLead: 'We do not support downloading YouTube video from the server. You can download on your personal device for personal listening again.',
+    youtubeDownloadWindows: 'Windows application',
+    youtubeDownloadMobile: 'Mobile app',
+    youtubeDownloadComingSoon: 'Coming soon',
+    openRemovePrivacy: 'Remove Your Privacy',
+    privacySensitiveHint: 'Privacy metadata was found. Use Remove Your Privacy to strip GPS and other details.',
+    safety: 'Scam & Virus Check',
+    scanFileTool: 'Virus Check',
+    scanFileDesc: 'Upload a file to check for virus.',
+    scanMsgTool: 'Scam Check',
+    scanMsgDesc: 'Paste SMS, email, or chat text to check for scam.',
   },
   zh: {
     brand: '工具', portal: 'AI-forAll', headline: 'AI Tools For All',
@@ -215,7 +232,7 @@ const text: Record<Lang, Record<string, string>> = {
     modeTopic: '主题',
     barcode: '条码',
     wrongPerson: '不是此人',
-    pdf: '文档 / PDF', office: '办公', image: '图片', media: '音频/视频', utility: '实用工具', ai: '人工智能',
+    pdf: '文档 / PDF', office: '办公', image: '图片', media: 'YouTube/音频/视频', utility: '实用工具', ai: '人工智能',
   },
   ta: {
     brand: 'கருவிகள்', portal: 'AI-forAll', headline: 'AI Tools For All',
@@ -231,7 +248,7 @@ const text: Record<Lang, Record<string, string>> = {
     modeTopic: 'தலைப்பு',
     barcode: 'பார்கோடு',
     wrongPerson: 'வேறு நபர்',
-    pdf: 'ஆவணங்கள் / PDF', office: 'அலுவலகம்', image: 'படங்கள்', media: 'ஒலி / காணொலி', utility: 'பயன்கள்', ai: 'AI',
+    pdf: 'ஆவணங்கள் / PDF', office: 'அலுவலகம்', image: 'படங்கள்', media: 'YouTube/ஒலி/காணொலி', utility: 'பயன்கள்', ai: 'AI',
   },
   hi: {
     brand: 'उपकरण', portal: 'AI-forAll', headline: 'AI Tools For All',
@@ -247,7 +264,7 @@ const text: Record<Lang, Record<string, string>> = {
     modeTopic: 'विषय',
     barcode: 'बारकोड',
     wrongPerson: 'गलत व्यक्ति',
-    pdf: 'दस्तावेज़ / PDF', office: 'ऑफिस', image: 'चित्र', media: 'ऑडियो/वीडियो', utility: 'उपयोगिताएँ', ai: 'AI',
+    pdf: 'दस्तावेज़ / PDF', office: 'ऑफिस', image: 'चित्र', media: 'YouTube/ऑडियो/वीडियो', utility: 'उपयोगिताएँ', ai: 'AI',
   },
   ml: {
     brand: 'ഉപകരണങ്ങൾ', portal: 'AI-forAll', headline: 'AI Tools For All',
@@ -263,7 +280,7 @@ const text: Record<Lang, Record<string, string>> = {
     modeTopic: 'വിഷയം',
     barcode: 'ബാർകോഡ്',
     wrongPerson: 'തെറ്റായ വ്യക്തി',
-    pdf: 'രേഖകൾ / PDF', office: 'ഓഫീസ്', image: 'ചിത്രങ്ങൾ', media: 'ശബ്ദം / വീഡിയോ', utility: 'യൂട്ടിലിറ്റി', ai: 'AI',
+    pdf: 'രേഖകൾ / PDF', office: 'ഓഫീസ്', image: 'ചിത്രങ്ങൾ', media: 'YouTube/ശബ്ദം/വീഡിയോ', utility: 'യൂട്ടിലിറ്റി', ai: 'AI',
   },
   kn: {
     brand: 'ಉಪಕರಣಗಳು', portal: 'AI-forAll', headline: 'AI Tools For All',
@@ -279,7 +296,7 @@ const text: Record<Lang, Record<string, string>> = {
     modeTopic: 'ವಿಷಯ',
     barcode: 'ಬಾರ್‌ಕೋಡ್',
     wrongPerson: 'ತಪ್ಪು ವ್ಯಕ್ತಿ',
-    pdf: 'ದಾಖಲೆಗಳು / PDF', office: 'ಕಚೇರಿ', image: 'ಚಿತ್ರಗಳು', media: 'ಆಡಿಯೋ/ವೀಡಿಯೊ', utility: 'ಉಪಯುಕ್ತತೆಗಳು', ai: 'AI',
+    pdf: 'ದಾಖಲೆಗಳು / PDF', office: 'ಕಚೇರಿ', image: 'ಚಿತ್ರಗಳು', media: 'YouTube/ಆಡಿಯೋ/ವೀಡಿಯೊ', utility: 'ಉಪಯುಕ್ತತೆಗಳು', ai: 'AI',
   },
   te: {
     brand: 'పరికరాలు', portal: 'AI-forAll', headline: 'AI Tools For All',
@@ -295,8 +312,13 @@ const text: Record<Lang, Record<string, string>> = {
     modeTopic: 'అంశం',
     barcode: 'బార్‌కోడ్',
     wrongPerson: 'తప్పు వ్యక్తి',
-    pdf: 'పత్రాలు / PDF', office: 'ఆఫీస్', image: 'చిత్రాలు', media: 'ఆడియో/వీడియో', utility: 'యుటిలిటీలు', ai: 'AI',
+    pdf: 'పత్రాలు / PDF', office: 'ఆఫీస్', image: 'చిత్రాలు', media: 'YouTube/ఆడియో/వీడియో', utility: 'యుటిలిటీలు', ai: 'AI',
   },
+}
+
+export function languageOptionLabel(code: string): string {
+  if (code === 'auto') return 'Auto'
+  return LANGS.find((item) => item.id === code)?.label ?? code
 }
 
 export function t(lang: Lang, key: string): string {
@@ -305,8 +327,4 @@ export function t(lang: Lang, key: string): string {
 
 export function speechLang(lang: Lang): string {
   return LANGS.find((item) => item.id === lang)?.speech ?? 'en-US'
-}
-
-export function languageOptionLabel(code: string): string {
-  return LANGS.find((item) => item.id === code)?.label ?? code
 }

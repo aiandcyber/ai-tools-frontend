@@ -54,6 +54,10 @@ const LLM_TOOL_IDS = new Set([
   'generate_document',
   'classify',
   'stt',
+  'video_translate',
+  'audio_translate',
+  'youtube_summarize',
+  'youtube_translate',
 ])
 const YOUTUBE_TOOL_IDS = new Set(['youtube_mp4', 'youtube_mp3'])
 const HIDDEN_TOOL_IDS = new Set(['youtube_mp4', 'youtube_mp3'])
@@ -501,9 +505,15 @@ export function App() {
     return () => controller.abort()
   }, [])
 
+  const catalogSafetyTools = useMemo(
+    () => tools.filter((tool) => tool.category === 'safety'),
+    [tools],
+  )
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    const all = [...tools, ...scanTools]
+    const safetyList = [...scanTools, ...catalogSafetyTools]
+    const all = [...tools.filter((tool) => tool.category !== 'safety'), ...safetyList]
     // Site-wide tool search (title, description, id, category).
     if (needle) {
       return all.filter((tool) => (
@@ -513,13 +523,13 @@ export function App() {
         || tool.category.toLowerCase().includes(needle)
       ))
     }
-    if (category === 'safety') return scanTools
+    if (category === 'safety') return safetyList
     // AI home: AI tools only (web search is the main panel default, not listed again).
     if (category === 'ai') {
       return tools.filter((tool) => tool.category === 'ai')
     }
     return tools.filter((tool) => tool.category === category)
-  }, [tools, scanTools, category, query])
+  }, [tools, scanTools, catalogSafetyTools, category, query])
 
   function categoryLabel(id: NavCategoryId | string): string {
     return t(lang, id)
@@ -1149,11 +1159,26 @@ export function App() {
         )}
 
         <main className={`panel${category === 'help' ? ' need-tool' : ''}`}>
-          {category === 'safety' && (
+          {category === 'safety' && selected?.id === 'image_privacy_check' && (
             <ScanPage
-              key={selected?.id === 'scan_message' ? 'scan_message' : 'scan_file'}
+              key="image_privacy_check"
               lang={lang}
-              mode={selected?.id === 'scan_message' ? 'message' : 'file'}
+              mode="privacy"
+              accent={accent.accent}
+              onOpenRemovePrivacy={() => {
+                const strip = tools.find((tool) => tool.id === 'image_strip_exif')
+                if (!strip) return
+                setCategory('image')
+                setSelected(strip)
+                window.history.pushState({}, '', '/')
+              }}
+            />
+          )}
+          {category === 'safety' && selected && selected.id !== 'image_privacy_check' && (
+            <ScanPage
+              key={selected.id === 'scan_message' ? 'scan_message' : 'scan_file'}
+              lang={lang}
+              mode={selected.id === 'scan_message' ? 'message' : 'file'}
               accent={accent.accent}
             />
           )}
@@ -1440,9 +1465,37 @@ export function App() {
               onSubmit={onRun}
             />
           )}
+          {category !== 'help' && category !== 'safety' && selected && selected.id === 'youtube_download' && (
+            <div className="tool-form modern-tool">
+              <div className="tool-hero">
+                <ToolGlyph category={selected.category} />
+                <div>
+                  <h2>{selected.title}</h2>
+                  <p>{selected.description}</p>
+                </div>
+              </div>
+              <p>{t(lang, 'youtubeDownloadLead')}</p>
+              <div className="field-stack">
+                <div className="field-card">
+                  <span className="field-label">{t(lang, 'youtubeDownloadWindows')}</span>
+                  <p className="field-hint">{t(lang, 'youtubeDownloadComingSoon')}</p>
+                  <a className="btn-secondary" href="#" onClick={(event) => event.preventDefault()}>
+                    {t(lang, 'youtubeDownloadComingSoon')}
+                  </a>
+                </div>
+                <div className="field-card">
+                  <span className="field-label">{t(lang, 'youtubeDownloadMobile')}</span>
+                  <p className="field-hint">{t(lang, 'youtubeDownloadComingSoon')}</p>
+                  <a className="btn-secondary" href="#" onClick={(event) => event.preventDefault()}>
+                    {t(lang, 'youtubeDownloadComingSoon')}
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
           {category !== 'help' && category !== 'safety' && selected && selected.id !== 'web_search' && selected.id !== 'translate'
             && selected.id !== 'summarize' && selected.id !== 'rewrite' && selected.id !== 'generate_document'
-            && selected.id !== 'youtube_mp4' && selected.id !== 'youtube_mp3' && (
+            && selected.id !== 'youtube_mp4' && selected.id !== 'youtube_mp3' && selected.id !== 'youtube_download' && (
             <form key={selected.id} className="tool-form modern-tool" onSubmit={onRun}>
               <div className="tool-hero">
                 <ToolGlyph category={selected.category} />
@@ -1853,7 +1906,9 @@ function ToolFields({ fields }: { fields: Tool['fields'] }) {
               >
                 {field.options.map((option) => (
                   <option key={option} value={option}>
-                    {field.name === 'language' ? languageOptionLabel(option) : option}
+                    {field.name === 'language' || field.name === 'source_language'
+                      ? languageOptionLabel(option)
+                      : option}
                   </option>
                 ))}
               </select>
