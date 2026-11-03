@@ -353,6 +353,8 @@ export function App() {
   const [searchKind, setSearchKind] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchBarcode, setSearchBarcode] = useState('')
+  const [searchImage, setSearchImage] = useState<File | null>(null)
+  const [searchImageUrl, setSearchImageUrl] = useState('')
   const [captureTab, setCaptureTab] = useState<'scan' | 'photo' | null>(null)
   const [docFormat, setDocFormat] = useState('docx')
   const [docTemplate, setDocTemplate] = useState('')
@@ -521,6 +523,22 @@ export function App() {
     return t(lang, id)
   }
 
+  function clearSearchImage() {
+    setSearchImage(null)
+    setSearchImageUrl((current) => {
+      if (current) URL.revokeObjectURL(current)
+      return ''
+    })
+  }
+
+  function attachSearchImage(file: File) {
+    setSearchImage(file)
+    setSearchImageUrl((current) => {
+      if (current) URL.revokeObjectURL(current)
+      return URL.createObjectURL(file)
+    })
+  }
+
   function pickCategory(id: NavCategoryId) {
     setCategory(id)
     setMessage('')
@@ -530,6 +548,7 @@ export function App() {
     setSearchKind('')
     setSearchQuery('')
     setSearchBarcode('')
+    clearSearchImage()
     setCaptureTab(null)
     setDownloads([])
     setOpenInfoId(null)
@@ -671,6 +690,7 @@ export function App() {
       ? 'product'
       : (resolved.mode === 'people' || resolved.mode === 'product' ? resolved.mode : searchKind)
     if (mode === 'people' || mode === 'product') setSearchKind(mode)
+    if (resolved.file) attachSearchImage(resolved.file)
     if (resolved.query || resolved.barcode) {
       if (!mode) {
         setSearchQuery(resolved.query || '')
@@ -686,6 +706,10 @@ export function App() {
         barcode: resolved.barcode || '',
         mode,
       })
+      return
+    }
+    if (resolved.file && (mode === 'people' || mode === 'product')) {
+      setError('')
       return
     }
     setError(t(lang, 'searchNoCode'))
@@ -1147,12 +1171,16 @@ export function App() {
               <h2>{t(lang, 'searchCat')}</h2>
               <p className="search-subtitle">{t(lang, 'searchSubtitle')}</p>
               <div className="google-box">
-                <span className="search-leading" aria-hidden="true">
-                  <svg viewBox="0 0 24 24">
-                    <circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
-                    <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" d="M16.5 16.5L21 21" />
-                  </svg>
-                </span>
+                {searchImageUrl ? (
+                  <img className="search-image-thumb" src={searchImageUrl} alt={t(lang, 'searchPhotoAttached')} />
+                ) : (
+                  <span className="search-leading" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+                      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" d="M16.5 16.5L21 21" />
+                    </svg>
+                  </span>
+                )}
                 <input
                   name="query"
                   type="text"
@@ -1161,21 +1189,26 @@ export function App() {
                   required={!searchBarcode}
                   autoFocus
                   placeholder={
-                    searchKind === 'people' ? t(lang, 'searchPlaceholderPeople')
-                      : searchKind === 'product' ? t(lang, 'searchPlaceholderProduct')
-                        : searchKind === 'topic' ? t(lang, 'searchPlaceholderTopic')
-                          : t(lang, 'searchPlaceholder')
+                    searchImage && searchKind === 'people' ? t(lang, 'searchPlaceholderPeoplePhoto')
+                      : searchImage && searchKind === 'product' ? t(lang, 'searchPlaceholderProductPhoto')
+                        : searchKind === 'people' ? t(lang, 'searchPlaceholderPeople')
+                          : searchKind === 'product' ? t(lang, 'searchPlaceholderProduct')
+                            : searchKind === 'topic' ? t(lang, 'searchPlaceholderTopic')
+                              : t(lang, 'searchPlaceholder')
                   }
                   aria-label={t(lang, 'searchCat')}
                 />
                 <div className="search-actions">
-                  {searchQuery ? (
+                  {searchQuery || searchImage ? (
                     <button
                       type="button"
                       className="search-cam search-clear"
                       aria-label={t(lang, 'searchClear')}
                       title={t(lang, 'searchClear')}
-                      onClick={() => setSearchQuery('')}
+                      onClick={() => {
+                        setSearchQuery('')
+                        clearSearchImage()
+                      }}
                     >
                       <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" d="M7 7l10 10M17 7L7 17" />

@@ -257,35 +257,45 @@ export function SearchCapture({
       </div>
 
       <div className="search-capture-chrome">
-        {needsTarget ? (
-          <div className="search-capture-targets" role="group" aria-label={t(lang, 'searchChooseFaceOrProduct')}>
+        <div className="search-capture-bar" role={needsTarget ? 'group' : undefined} aria-label={needsTarget ? t(lang, 'searchChooseFaceOrProduct') : undefined}>
+          {needsTarget ? (
             <button
               type="button"
-              className={photoTarget === 'face' ? 'on' : ''}
+              className={`search-capture-target${photoTarget === 'face' ? ' on' : ''}`}
               aria-pressed={photoTarget === 'face'}
               onClick={() => choosePhotoTarget('face')}
             >
               {t(lang, 'searchFace')}
             </button>
+          ) : (
+            <span className="search-capture-side" aria-hidden="true" />
+          )}
+          {tab === 'photo' ? (
+            <button type="button" className="search-shutter" aria-label={t(lang, 'searchPhoto')} disabled={busy} onClick={() => void onShutter()} />
+          ) : tab === 'album' ? (
             <button
               type="button"
-              className={photoTarget === 'product' ? 'on' : ''}
+              className="search-capture-album-shutter"
+              disabled={busy || !photoTarget}
+              onClick={() => albumRef.current?.click()}
+            >
+              {t(lang, 'searchAlbum')}
+            </button>
+          ) : (
+            <span className="search-shutter ghost" aria-hidden="true" />
+          )}
+          {needsTarget ? (
+            <button
+              type="button"
+              className={`search-capture-target${photoTarget === 'product' ? ' on' : ''}`}
               aria-pressed={photoTarget === 'product'}
               onClick={() => choosePhotoTarget('product')}
             >
               {t(lang, 'searchProductCam')}
             </button>
-          </div>
-        ) : null}
-
-        <div className="search-capture-bar">
-          <span className="search-capture-side" aria-hidden="true" />
-          {tab === 'photo' ? (
-            <button type="button" className="search-shutter" aria-label={t(lang, 'searchPhoto')} disabled={busy} onClick={() => void onShutter()} />
           ) : (
-            <span className="search-shutter ghost" aria-hidden="true" />
+            <span className="search-capture-side end" aria-hidden="true" />
           )}
-          <span className="search-capture-side end" aria-hidden="true" />
         </div>
 
         <div className="search-capture-tabs" role="tablist" aria-label={t(lang, 'searchCamera')}>
