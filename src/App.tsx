@@ -356,6 +356,8 @@ export function App() {
   const [searchImage, setSearchImage] = useState<File | null>(null)
   const [searchImageUrl, setSearchImageUrl] = useState('')
   const [captureTab, setCaptureTab] = useState<'scan' | 'photo' | null>(null)
+  const [codeCaptureFor, setCodeCaptureFor] = useState<null | 'qr_scan' | 'barcode_scan'>(null)
+  const [toolScanFile, setToolScanFile] = useState<File | null>(null)
   const [docFormat, setDocFormat] = useState('docx')
   const [docTemplate, setDocTemplate] = useState('')
   const [exportBusy, setExportBusy] = useState(false)
@@ -1114,6 +1116,8 @@ export function App() {
                       setSearchMeta({})
                       setDownloads([])
                       setOpenInfoId(null)
+                      setToolScanFile(null)
+                      setCodeCaptureFor(null)
                     }}
                   >
                     <strong>{tool.title}</strong>
@@ -1454,39 +1458,34 @@ export function App() {
                   dropHint={t(lang, 'dropHint')}
                   browseLabel={t(lang, 'browse')}
                   emptyLabel={t(lang, 'files')}
+                  assignedFile={selected.id === 'qr_scan' || selected.id === 'barcode_scan' ? toolScanFile : null}
+                />
+              )}
+              {(selected.id === 'qr_scan' || selected.id === 'barcode_scan') && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setCodeCaptureFor(selected.id as 'qr_scan' | 'barcode_scan')}
+                >
+                  {t(lang, 'searchCamera')}
+                </button>
+              )}
+              {codeCaptureFor && (selected.id === 'qr_scan' || selected.id === 'barcode_scan') && (
+                <SearchCapture
+                  key={`code-${codeCaptureFor}`}
+                  lang={lang}
+                  initialTab="scan"
+                  variant="code"
+                  onClose={() => setCodeCaptureFor(null)}
+                  onHit={(hit) => {
+                    setCodeCaptureFor(null)
+                    if (hit.file) setToolScanFile(hit.file)
+                    else setError(t(lang, 'searchNoCode'))
+                  }}
                 />
               )}
               <div className="field-stack">
-                {selected.fields.map((field) => (
-                  <label key={field.name} className="field-card">
-                    <span className="field-label">{field.label}</span>
-                    {field.kind === 'textarea' ? (
-                      <textarea
-                        name={field.name}
-                        defaultValue={field.default}
-                        required={field.required}
-                        rows={7}
-                        placeholder={field.label}
-                      />
-                    ) : field.kind === 'select' ? (
-                      <select name={field.name} defaultValue={field.default}>
-                        {field.options.map((option) => (
-                          <option key={option} value={option}>
-                            {field.name === 'language' ? languageOptionLabel(option) : option}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        name={field.name}
-                        type={field.kind}
-                        defaultValue={field.default}
-                        required={field.required}
-                        placeholder={field.label}
-                      />
-                    )}
-                  </label>
-                ))}
+                <ToolFields fields={selected.fields} />
               </div>
               <button type="submit" className="btn-primary" disabled={busy} style={{ background: accent.accent }}>
                 {busy ? t(lang, 'working') : t(lang, 'run')}
@@ -1830,18 +1829,67 @@ function YoutubeToolForm({
   )
 }
 
+function ToolFields({ fields }: { fields: Tool['fields'] }) {
+  const [action, setAction] = useState(() => fields.find((field) => field.name === 'action')?.default || '')
+  return (
+    <>
+      {fields.map((field) => {
+        if (field.name === 'angle' && fields.some((item) => item.name === 'action') && action !== 'rotate') {
+          return null
+        }
+        return (
+          <label key={field.name} className="field-card">
+            <span className="field-label">{field.label}</span>
+            {field.kind === 'textarea' ? (
+              <textarea
+                name={field.name}
+                defaultValue={field.default}
+                required={field.required}
+                rows={7}
+                placeholder={field.label}
+              />
+            ) : field.kind === 'select' ? (
+              <select
+                name={field.name}
+                defaultValue={field.default}
+                onChange={field.name === 'action' ? (event) => setAction(event.target.value) : undefined}
+              >
+                {field.options.map((option) => (
+                  <option key={option} value={option}>
+                    {field.name === 'language' ? languageOptionLabel(option) : option}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                name={field.name}
+                type={field.kind}
+                defaultValue={field.default}
+                required={field.required}
+                placeholder={field.label}
+              />
+            )}
+          </label>
+        )
+      })}
+    </>
+  )
+}
+
 function FileDropField({
   accept,
   multiple,
   dropHint,
   browseLabel,
   emptyLabel,
+  assignedFile = null,
 }: {
   accept: string
   multiple: boolean
   dropHint: string
   browseLabel: string
   emptyLabel: string
+  assignedFile?: File | null
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [names, setNames] = useState('')
@@ -1854,6 +1902,14 @@ function FileDropField({
     }
     setNames(Array.from(list).map((file) => file.name).join(', '))
   }
+
+  useEffect(() => {
+    if (!assignedFile || !inputRef.current) return
+    const transfer = new DataTransfer()
+    transfer.items.add(assignedFile)
+    inputRef.current.files = transfer.files
+    syncNames(transfer.files)
+  }, [assignedFile])
 
   return (
     <div

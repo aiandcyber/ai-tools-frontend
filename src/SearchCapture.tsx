@@ -50,16 +50,32 @@ function modeFromTarget(target: PhotoTarget): 'people' | 'product' {
   return target === 'face' ? 'people' : 'product'
 }
 
+async function frameFromVideo(video: HTMLVideoElement): Promise<File | null> {
+  if (video.readyState < 2) return null
+  const canvas = document.createElement('canvas')
+  canvas.width = video.videoWidth || 1280
+  canvas.height = video.videoHeight || 720
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9))
+  if (!blob) return null
+  return new File([blob], 'capture.jpg', { type: 'image/jpeg' })
+}
+
 export function SearchCapture({
   lang,
   initialTab = 'scan',
   initialPhotoTarget = null,
+  variant = 'search',
   onClose,
   onHit,
 }: {
   lang: Lang
   initialTab?: Exclude<Tab, 'album'>
   initialPhotoTarget?: PhotoTarget | null
+  /** search = Face/Product flow; code = QR/barcode camera reuse without Face/Product */
+  variant?: 'search' | 'code'
   onClose: () => void
   onHit: (hit: CaptureHit) => void
 }) {
@@ -69,11 +85,14 @@ export function SearchCapture({
   const onHitRef = useRef(onHit)
   onHitRef.current = onHit
   const [tab, setTab] = useState<Tab>(initialTab)
-  const [photoTarget, setPhotoTarget] = useState<PhotoTarget | null>(initialPhotoTarget)
-  const facing = photoTarget === 'face' ? 'user' : 'environment'
+  const [photoTarget, setPhotoTarget] = useState<PhotoTarget | null>(
+    variant === 'code' ? 'product' : initialPhotoTarget,
+  )
+  const facing = variant === 'code' ? 'environment' : (photoTarget === 'face' ? 'user' : 'environment')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const needsTarget = tab === 'photo' || tab === 'album'
+  const needsTarget = variant === 'search' && (tab === 'photo' || tab === 'album')
+  const scanTabLabel = variant === 'code' ? t(lang, 'captureScan') : t(lang, 'searchScan')
 
   function choosePhotoTarget(next: PhotoTarget) {
     setPhotoTarget(next)
@@ -130,7 +149,8 @@ export function SearchCapture({
           const codes = await detectCodes(video)
           if (cancelled) return
           if (codes[0]) {
-            onHitRef.current(hitFromCode(codes[0].rawValue, codes[0].format))
+            const file = await frameFromVideo(video)
+            onHitRef.current({ ...hitFromCode(codes[0].rawValue, codes[0].format), file: file || undefined })
             return
           }
         }
@@ -149,13 +169,13 @@ export function SearchCapture({
 
   useEffect(() => {
     if (tab !== 'album') return
-    if (!photoTarget) return
+    if (variant === 'search' && !photoTarget) return
     const id = window.setTimeout(() => albumRef.current?.click(), 0)
     return () => window.clearTimeout(id)
-  }, [tab, photoTarget])
+  }, [tab, photoTarget, variant])
 
   async function onShutter() {
-    if (!photoTarget) {
+    if (variant === 'search' && !photoTarget) {
       setError(t(lang, 'searchChooseFaceOrProduct'))
       return
     }
@@ -166,24 +186,20 @@ export function SearchCapture({
     }
     setBusy(true)
     try {
-      const canvas = document.createElement('canvas')
-      canvas.width = video.videoWidth || 1280
-      canvas.height = video.videoHeight || 720
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9))
-      if (!blob) return
-      const file = new File([blob], 'capture.jpg', { type: 'image/jpeg' })
+      const file = await frameFromVideo(video)
+      if (!file) return
       const bitmap = await createImageBitmap(file)
       const codes = await detectCodes(bitmap)
       bitmap.close()
-      const mode = modeFromTarget(photoTarget)
       if (codes[0]) {
         onHit({ ...hitFromCode(codes[0].rawValue, codes[0].format), file })
         return
       }
-      onHit({ file, mode })
+      if (variant === 'code') {
+        onHit({ file, mode: 'product' })
+        return
+      }
+      onHit({ file, mode: modeFromTarget(photoTarget!) })
     } finally {
       setBusy(false)
     }
@@ -191,10 +207,10 @@ export function SearchCapture({
 
   async function onAlbum(file: File | undefined) {
     if (!file) {
-      if (tab === 'album') setTab('photo')
+      if (tab === 'album') setTab(variant === 'code' ? 'scan' : 'photo')
       return
     }
-    if (!photoTarget) {
+    if (variant === 'search' && !photoTarget) {
       setError(t(lang, 'searchChooseFaceOrProduct'))
       return
     }
@@ -203,12 +219,15 @@ export function SearchCapture({
       const bitmap = await createImageBitmap(file)
       const codes = await detectCodes(bitmap)
       bitmap.close()
-      const mode = modeFromTarget(photoTarget)
       if (codes[0]) {
         onHit({ ...hitFromCode(codes[0].rawValue, codes[0].format), file })
         return
       }
-      onHit({ file, mode })
+      if (variant === 'code') {
+        onHit({ file, mode: 'product' })
+        return
+      }
+      onHit({ file, mode: modeFromTarget(photoTarget!) })
     } finally {
       setBusy(false)
     }
@@ -216,7 +235,8 @@ export function SearchCapture({
 
   function openAlbumTab() {
     setTab('album')
-    setError(photoTarget ? '' : t(lang, 'searchChooseFaceOrProduct'))
+    if (variant === 'search' && !photoTarget) setError(t(lang, 'searchChooseFaceOrProduct'))
+    else setError('')
   }
 
   return (
@@ -224,11 +244,15 @@ export function SearchCapture({
       <div className="search-capture-stage">
         {tab === 'album' ? (
           <div className="search-capture-album-empty">
-            <p>{photoTarget ? t(lang, 'searchAlbumHint') : t(lang, 'searchChooseFaceOrProduct')}</p>
+            <p>
+              {variant === 'code' || photoTarget
+                ? t(lang, 'searchAlbumHint')
+                : t(lang, 'searchChooseFaceOrProduct')}
+            </p>
             <button
               type="button"
               className="search-capture-album-cta"
-              disabled={busy || !photoTarget}
+              disabled={busy || (variant === 'search' && !photoTarget)}
               onClick={() => albumRef.current?.click()}
             >
               {t(lang, 'searchAlbum')}
@@ -276,7 +300,7 @@ export function SearchCapture({
             <button
               type="button"
               className="search-capture-album-shutter"
-              disabled={busy || !photoTarget}
+              disabled={busy || (variant === 'search' && !photoTarget)}
               onClick={() => albumRef.current?.click()}
             >
               {t(lang, 'searchAlbum')}
@@ -306,7 +330,7 @@ export function SearchCapture({
             className={tab === 'scan' ? 'on' : ''}
             onClick={() => { setTab('scan'); setError('') }}
           >
-            {t(lang, 'searchScan')}
+            {scanTabLabel}
           </button>
           <button
             type="button"
