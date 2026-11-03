@@ -1459,16 +1459,13 @@ export function App() {
                   browseLabel={t(lang, 'browse')}
                   emptyLabel={t(lang, 'files')}
                   assignedFile={selected.id === 'qr_scan' || selected.id === 'barcode_scan' ? toolScanFile : null}
+                  cameraLabel={selected.id === 'qr_scan' || selected.id === 'barcode_scan' ? t(lang, 'searchCamera') : undefined}
+                  onCameraClick={
+                    selected.id === 'qr_scan' || selected.id === 'barcode_scan'
+                      ? () => setCodeCaptureFor(selected.id as 'qr_scan' | 'barcode_scan')
+                      : undefined
+                  }
                 />
-              )}
-              {(selected.id === 'qr_scan' || selected.id === 'barcode_scan') && (
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setCodeCaptureFor(selected.id as 'qr_scan' | 'barcode_scan')}
-                >
-                  {t(lang, 'searchCamera')}
-                </button>
               )}
               {codeCaptureFor && (selected.id === 'qr_scan' || selected.id === 'barcode_scan') && (
                 <SearchCapture
@@ -1883,6 +1880,8 @@ function FileDropField({
   browseLabel,
   emptyLabel,
   assignedFile = null,
+  cameraLabel,
+  onCameraClick,
 }: {
   accept: string
   multiple: boolean
@@ -1890,6 +1889,8 @@ function FileDropField({
   browseLabel: string
   emptyLabel: string
   assignedFile?: File | null
+  cameraLabel?: string
+  onCameraClick?: () => void
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [names, setNames] = useState('')
@@ -1940,6 +1941,11 @@ function FileDropField({
         <button type="button" className="btn-secondary" onClick={() => inputRef.current?.click()}>
           {browseLabel}
         </button>
+        {cameraLabel && onCameraClick ? (
+          <button type="button" className="btn-secondary" onClick={onCameraClick}>
+            {cameraLabel}
+          </button>
+        ) : null}
         <p className="dropzone-files">{names || emptyLabel}</p>
       </div>
     </div>
