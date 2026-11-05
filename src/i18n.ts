@@ -251,6 +251,9 @@ const text: Record<Lang, Record<string, string>> = {
     scanFailed: 'Could not check. Please try again.',
     scanClean: 'No virus or scam found.',
     scanHit: 'This looks unsafe. Do not open or share it.',
+    scanRecVirus: 'Recommendation: virus — do not open or use this file.',
+    scanRecUnsafe: 'Recommendation: unsafe — do not open or share it.',
+    scanRecSafe: 'Recommendation: safe to use.',
   },
   yue: {
     brand: '工具', portal: 'AI-forAll', headline: '人人可用嘅 AI 工具',
@@ -491,6 +494,9 @@ const text: Record<Lang, Record<string, string>> = {
     scanFailed: '無法檢查。請再試一次。',
     scanClean: '搵唔到病毒或詐騙。',
     scanHit: '呢個睇落唔安全。唔好開啟或分享。',
+    scanRecVirus: '建議：病毒 — 唔好開啟或使用呢個檔案。',
+    scanRecUnsafe: '建議：唔安全 — 唔好開啟或分享。',
+    scanRecSafe: '建議：可以安全使用。',
   },
   zh: {
     brand: '工具', portal: 'AI-forAll', headline: 'AI Tools For All',

@@ -35,6 +35,7 @@ import { MdIcon } from './MdIcon'
 import { getTurnstileToken } from './turnstile'
 import { TURNSTILE_SITEKEY } from './config'
 import { openRememberedOutput, readOutputMeta, saveOutputAndRemember } from './outputMemory'
+import { PROFILE_REGIONS } from './regions'
 
 type Rec = {
   lang: string
@@ -362,7 +363,8 @@ export function App() {
   const [loadError, setLoadError] = useState('')
   const [openInfoId, setOpenInfoId] = useState<string | null>(null)
   const [regionMode, setRegionMode] = useState<'auto' | 'manual'>('auto')
-  const [regionCustom, setRegionCustom] = useState('')
+  /** Manual product region: HK | CN | IN | US | OTHER (same as Senior). */
+  const [regionCustom, setRegionCustom] = useState('HK')
   const [searchKind, setSearchKind] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchBarcode, setSearchBarcode] = useState('')
@@ -743,11 +745,11 @@ export function App() {
           return
         }
       }
-      const typed = regionCustom.trim()
+      const typed = regionCustom.trim().toUpperCase() || 'OTHER'
       const result = await runSearch({
         query,
         mode,
-        region: regionMode === 'manual' ? (typed || 'CUSTOM') : 'AUTO',
+        region: regionMode === 'manual' ? typed : 'AUTO',
         language: lang,
         location: regionMode === 'manual' ? typed : '',
         barcode,
@@ -1458,29 +1460,25 @@ export function App() {
                       />
                       {t(lang, 'modeAuto')}
                     </label>
-                    <label className="search-kind">
-                      <input
-                        type="checkbox"
-                        checked={regionMode === 'manual'}
-                        onChange={() => setRegionMode((current) => (current === 'manual' ? 'auto' : 'manual'))}
-                      />
-                      {t(lang, 'regionType')}
-                    </label>
-                    <input
-                      className="region-type-input"
-                      type="text"
-                      value={regionCustom}
-                      onChange={(event) => {
-                        setRegionCustom(event.target.value)
-                        if (event.target.value.trim()) setRegionMode('manual')
-                      }}
-                      placeholder={t(lang, 'regionTypePlaceholder')}
-                      aria-label={t(lang, 'regionType')}
-                    />
+                    {PROFILE_REGIONS.map((item) => (
+                      <label key={item.code} className="search-kind">
+                        <input
+                          type="checkbox"
+                          checked={regionMode === 'manual' && regionCustom === item.code}
+                          onChange={() => {
+                            setRegionCustom(item.code)
+                            setRegionMode((current) =>
+                              current === 'manual' && regionCustom === item.code ? 'auto' : 'manual',
+                            )
+                          }}
+                        />
+                        {item.label}
+                      </label>
+                    ))}
                   </span>
                 </fieldset>
-                <input type="hidden" name="region" value={regionMode === 'manual' ? (regionCustom.trim() || 'CUSTOM') : 'AUTO'} />
-                <input type="hidden" name="location" value={regionMode === 'manual' ? regionCustom.trim() : ''} />
+                <input type="hidden" name="region" value={regionMode === 'manual' ? (regionCustom || 'OTHER') : 'AUTO'} />
+                <input type="hidden" name="location" value={regionMode === 'manual' ? (regionCustom || 'OTHER') : ''} />
                 <input type="hidden" name="language" value={lang} />
               </div>
               {error && <p className="error">{error}</p>}

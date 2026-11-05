@@ -11,6 +11,8 @@ type Verdict = {
   labels?: string[]
   detail?: string
   stage?: string
+  /** virus | unsafe | safe_to_use */
+  recommendation?: string
 }
 
 const USER_LABELS: Record<string, string> = {
@@ -222,6 +224,14 @@ export function ScanPage({
 
   const labels = friendlyLabels(verdict?.labels)
   const hit = Boolean(verdict && (verdict.ok === false || labels.length))
+  const recommendationText = (() => {
+    const rec = verdict?.recommendation
+    if (rec === 'virus') return t(lang, 'scanRecVirus')
+    if (rec === 'unsafe') return t(lang, 'scanRecUnsafe')
+    if (rec === 'safe_to_use') return t(lang, 'scanRecSafe')
+    if (!verdict) return ''
+    return hit ? t(lang, 'scanHit') : t(lang, 'scanClean')
+  })()
   const title =
     mode === 'file' ? t(lang, 'scanFileTool')
       : mode === 'message' ? t(lang, 'scanMsgTool')
@@ -312,7 +322,7 @@ export function ScanPage({
         <div className="result-card" role="status">
           <h3>{t(lang, 'result')}</h3>
           <pre className="result-body">
-            {hit ? t(lang, 'scanHit') : t(lang, 'scanClean')}
+            {recommendationText}
             {labels.length ? `\n${labels.join(', ')}` : ''}
             {verdict.detail ? `\n${verdict.detail}` : ''}
           </pre>
