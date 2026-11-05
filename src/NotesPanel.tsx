@@ -30,12 +30,22 @@ type Props = {
 
 type FileHandle = FileSystemFileHandle
 
+const NOTE_EXT = '.txt'
+const NOTE_MIME = 'text/plain'
+
 function defaultNoteName(): string {
   const d = new Date()
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
-  return `note-${y}-${m}-${day}.txt`
+  return `note-${y}-${m}-${day}${NOTE_EXT}`
+}
+
+/** Always save notes as .txt — app chooses the format, not the user. */
+function ensureNoteFileName(name: string): string {
+  const trimmed = (name || '').trim() || defaultNoteName()
+  const bare = trimmed.replace(/\.[^.]+$/i, '')
+  return `${bare || 'note'}${NOTE_EXT}`
 }
 
 function supportsFilePicker(): boolean {
@@ -165,7 +175,7 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
 
   async function onSave() {
     const payload = text
-    const suggested = fileLabel || defaultNoteName()
+    const suggested = ensureNoteFileName(fileLabel || defaultNoteName())
     try {
       if (fileHandleRef.current) {
         await writeToHandle(fileHandleRef.current, payload)
@@ -177,12 +187,17 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
           // @ts-expect-error File System Access API
           const handle = await window.showSaveFilePicker({
             suggestedName: suggested,
-            types: [{ description: 'Text note', accept: { 'text/plain': ['.txt'] } }],
+            excludeAcceptAllOption: true,
+            types: [{
+              description: t(lang, 'noteFileType'),
+              accept: { [NOTE_MIME]: [NOTE_EXT] },
+            }],
           }) as FileHandle
           await writeToHandle(handle, payload)
           fileHandleRef.current = handle
-          setFileLabel(handle.name || suggested)
-          setStatus(t(lang, 'noteSavedFile').replace('{name}', handle.name || suggested))
+          const savedName = ensureNoteFileName(handle.name || suggested)
+          setFileLabel(savedName)
+          setStatus(t(lang, 'noteSavedFile').replace('{name}', savedName))
           return
         } catch (exc) {
           if (exc instanceof DOMException && exc.name === 'AbortError') {
@@ -191,7 +206,7 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
           }
         }
       }
-      const blob = new Blob([payload], { type: 'text/plain' })
+      const blob = new Blob([payload], { type: NOTE_MIME })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -214,12 +229,16 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
       // @ts-expect-error File System Access API
       const [handle] = await window.showOpenFilePicker({
         multiple: false,
-        types: [{ description: 'Text note', accept: { 'text/plain': ['.txt', '.md'] } }],
+        excludeAcceptAllOption: true,
+        types: [{
+          description: t(lang, 'noteFileType'),
+          accept: { [NOTE_MIME]: [NOTE_EXT] },
+        }],
       }) as FileHandle[]
       const file = await handle.getFile()
       const contents = await file.text()
       fileHandleRef.current = handle
-      setFileLabel(handle.name || file.name)
+      setFileLabel(ensureNoteFileName(handle.name || file.name))
       setText(contents)
       setStrokes([])
       setStatus(t(lang, 'noteOpenedFile').replace('{name}', handle.name || file.name))

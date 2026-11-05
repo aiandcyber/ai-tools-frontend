@@ -61,6 +61,8 @@ const text: Record<Lang, Record<string, string>> = {
     noteNewReady: 'Ready for a new note.',
     noteOpen: 'Open',
     noteSave: 'Save',
+    noteFileType: 'Text file (.txt)',
+
     noteExport: 'Export',
     noteDelete: 'Delete',
     noteLibrary: 'Saved notes',
@@ -251,6 +253,8 @@ const text: Record<Lang, Record<string, string>> = {
     noteNewReady: '可以開始寫新筆記。',
     noteOpen: '開啟',
     noteSave: '儲存',
+    noteFileType: '文字檔 (.txt)',
+
     noteExport: '匯出',
     noteDelete: '刪除',
     noteLibrary: '已儲存筆記',
