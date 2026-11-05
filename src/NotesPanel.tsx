@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { fetchDownloadText, formatApiError, runTool, transcribeAudio } from './api'
+import { fetchDownloadText, formatApiError, runTool } from './api'
 import { speechLang, t, type Lang } from './i18n'
 import { type NoteStroke } from './notesStore'
 import { useRequireAuth } from './useRequireAuth'
@@ -10,9 +10,16 @@ type SpeechRec = {
   interimResults: boolean
   start: () => void
   stop: () => void
+  abort?: () => void
   onresult: ((event: { results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }) => void) | null
   onerror: ((event: { error: string }) => void) | null
   onend: (() => void) | null
+}
+
+type SpeechSession = {
+  rec: SpeechRec
+  base: string
+  stopped: boolean
 }
 
 type Props = {
@@ -102,11 +109,7 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
   const [recording, setRecording] = useState(false)
-  const mediaRef = useRef<MediaRecorder | null>(null)
-  const speechRef = useRef<SpeechRec | null>(null)
-  const speechBaseRef = useRef('')
-  const speechFinalRef = useRef('')
-  const chunksRef = useRef<Blob[]>([])
+  const speechSessionRef = useRef<SpeechSession | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -284,34 +287,43 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
     setStatus(t(lang, 'noteSentToSearch'))
   }
 
-  function stopSpeech() {
-    const recognition = speechRef.current
-    speechRef.current = null
-    try { recognition?.stop() } catch { /* ignore */ }
+  function applySpeechText(base: string, finalText: string, interim: string) {
+    const spoken = [finalText, interim].filter((part) => part.trim()).join(' ').replace(/\s+/g, ' ').trim()
+    const prior = base.trim()
+    setText(prior && spoken ? `${prior}\n${spoken}` : (spoken || prior))
   }
 
-  async function startRecorderFallback() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const rec = new MediaRecorder(stream)
-      chunksRef.current = []
-      rec.ondataavailable = (event) => {
-        if (event.data.size) chunksRef.current.push(event.data)
+  function restartSpeechRecognition(recognition: SpeechRec, session: SpeechSession) {
+    if (session.stopped || speechSessionRef.current !== session) return
+    const tryStart = () => {
+      if (session.stopped || speechSessionRef.current !== session) return
+      try {
+        recognition.start()
+      } catch {
+        window.setTimeout(() => {
+          if (session.stopped || speechSessionRef.current !== session) return
+          try { recognition.start() } catch { /* keep Listening UI; user can Stop */ }
+        }, 180)
       }
-      rec.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop())
-        void finishRec()
-      }
-      mediaRef.current = rec
-      rec.start()
-      setRecording(true)
-      setStatus(t(lang, 'listening'))
-    } catch {
-      setStatus(t(lang, 'micDenied'))
     }
+    window.setTimeout(tryStart, 60)
   }
 
-  async function startRec() {
+  function stopSpeechCapture() {
+    const session = speechSessionRef.current
+    if (session) session.stopped = true
+    speechSessionRef.current = null
+    setRecording(false)
+    try { session?.rec.stop() } catch { /* ignore */ }
+    try { session?.rec.abort?.() } catch { /* ignore */ }
+  }
+
+  function startRec() {
+    if (recording) {
+      stopSpeechCapture()
+      setStatus(t(lang, 'noteTranscribed'))
+      return
+    }
     setStatus('')
     const ctor = (window as unknown as {
       SpeechRecognition?: new () => SpeechRec
@@ -319,96 +331,62 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
     }).SpeechRecognition
       || (window as unknown as { webkitSpeechRecognition?: new () => SpeechRec }).webkitSpeechRecognition
 
-    if (ctor) {
-      const recognition = new ctor()
-      recognition.lang = speechLang(lang)
-      recognition.continuous = true
-      recognition.interimResults = true
-      speechBaseRef.current = text
-      speechFinalRef.current = ''
-      speechRef.current = recognition
-      recognition.onresult = (event) => {
-        let finalText = ''
-        let interim = ''
-        for (let i = 0; i < event.results.length; i += 1) {
-          const piece = event.results[i][0].transcript
-          if (event.results[i].isFinal) finalText += `${piece} `
-          else interim += piece
-        }
-        if (finalText.trim()) {
-          speechFinalRef.current = `${speechFinalRef.current} ${finalText}`.replace(/\s+/g, ' ').trim()
-        }
-        const heard = `${speechFinalRef.current} ${interim}`.replace(/\s+/g, ' ').trim()
-        const base = speechBaseRef.current.trim()
-        setText(base && heard ? `${base}\n${heard}` : (heard || base))
+    if (!ctor) {
+      setStatus(t(lang, 'speechUnsupported'))
+      return
+    }
+
+    const recognition = new ctor()
+    recognition.lang = speechLang(lang)
+    recognition.continuous = true
+    recognition.interimResults = true
+    const session: SpeechSession = {
+      rec: recognition,
+      base: text,
+      stopped: false,
+    }
+    speechSessionRef.current = session
+    recognition.onresult = (event) => {
+      let finalText = ''
+      let interim = ''
+      for (let i = 0; i < event.results.length; i += 1) {
+        const piece = event.results[i][0].transcript
+        if (event.results[i].isFinal) finalText += `${piece} `
+        else interim += piece
       }
-      recognition.onerror = (event) => {
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          setStatus(t(lang, 'micDenied'))
-          stopSpeech()
-          setRecording(false)
-          return
-        }
-        if (event.error === 'no-speech' || event.error === 'aborted') return
-        if (event.error === 'network' || event.error === 'audio-capture') {
-          setStatus(t(lang, 'voiceFailed'))
-          stopSpeech()
-          setRecording(false)
-        }
-      }
-      recognition.onend = () => {
-        if (!speechRef.current) return
-        try { recognition.start() } catch { /* ignore restart races */ }
-      }
-      try {
-        recognition.start()
-        setRecording(true)
-        setStatus(t(lang, 'listening'))
+      applySpeechText(session.base, finalText, interim)
+    }
+    recognition.onerror = (event) => {
+      if (session.stopped) return
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        setStatus(t(lang, 'micDenied'))
+        stopSpeechCapture()
         return
-      } catch {
-        speechRef.current = null
+      }
+      // Same as agent: Chrome ends turns with aborted/no-speech; keep listening.
+      if (event.error === 'no-speech' || event.error === 'aborted') return
+      if (event.error === 'network' || event.error === 'audio-capture') {
+        setStatus(t(lang, 'voiceFailed'))
+        stopSpeechCapture()
       }
     }
-    await startRecorderFallback()
+    recognition.onend = () => {
+      restartSpeechRecognition(recognition, session)
+    }
+    try {
+      recognition.start()
+      setRecording(true)
+      setStatus(t(lang, 'listening'))
+    } catch {
+      speechSessionRef.current = null
+      setStatus(t(lang, 'voiceFailed'))
+    }
   }
 
   function stopRec() {
-    if (speechRef.current) {
-      stopSpeech()
-      setRecording(false)
-      setStatus(speechFinalRef.current.trim() ? t(lang, 'noteTranscribed') : t(lang, 'cancelled'))
-      return
-    }
-    mediaRef.current?.stop()
-    setRecording(false)
-  }
-
-  async function finishRec() {
-    const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-    if (!blob.size) {
-      setStatus(t(lang, 'voiceFailed'))
-      return
-    }
-    setBusy(true)
-    setStatus(t(lang, 'noteVoiceWorking'))
-    try {
-      if (!(await ensureAuth())) {
-        setBusy(false)
-        setStatus(t(lang, 'signIn'))
-        return
-      }
-      const heard = await transcribeAudio(blob, lang)
-      if (!heard.trim()) {
-        setStatus(t(lang, 'voiceFailed'))
-        return
-      }
-      setText((prev) => (prev ? `${prev}\n${heard}` : heard))
-      setStatus(t(lang, 'noteTranscribed'))
-    } catch (exc) {
-      setStatus(formatApiError(exc, t(lang, 'voiceFailed')))
-    } finally {
-      setBusy(false)
-    }
+    const hadSpeech = Boolean(speechSessionRef.current && !speechSessionRef.current.stopped)
+    stopSpeechCapture()
+    setStatus(hadSpeech ? t(lang, 'noteTranscribed') : t(lang, 'cancelled'))
   }
 
   const fileHint: ReactNode = fileLabel
@@ -430,7 +408,7 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
           <NoteButton
             icon="mic"
             label={t(lang, 'voice')}
-            onClick={() => void startRec()}
+            onClick={startRec}
             disabled={busy}
             primary
             accent={accent}
