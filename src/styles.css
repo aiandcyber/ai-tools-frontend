@@ -100,27 +100,69 @@ button { cursor: pointer; }
 }
 
 .topbar-lang {
+  position: relative;
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
 }
 
-.topbar-lang select {
-  width: auto;
+.topbar-lang-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1rem;
   min-width: 3.1rem;
-  max-width: 3.6rem;
-  margin-top: 0;
   min-height: 2.2rem;
-  padding: 0.3rem 0.2rem 0.3rem 0.45rem;
+  padding: 0.3rem 0.35rem 0.3rem 0.55rem;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: #fff;
   font-weight: 700;
   font-size: 0.82rem;
   letter-spacing: 0.04em;
-  text-align: center;
   color: #0f766e;
   cursor: pointer;
+}
+
+.topbar-lang-btn .md-icon {
+  font-size: 1.05rem;
+  opacity: 0.75;
+}
+
+.topbar-lang-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 30;
+  margin: 0;
+  padding: 0.35rem;
+  list-style: none;
+  min-width: 10.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: #fff;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 0.15rem;
+}
+
+.topbar-lang-menu button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.55rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.topbar-lang-menu button:hover,
+.topbar-lang-menu button.on {
+  background: #f0fdfa;
+  color: #0f766e;
 }
 
 .topbar .btn-primary,
@@ -2171,9 +2213,8 @@ button { cursor: pointer; }
   .top-actions {
     gap: 0.35rem;
   }
-  .topbar-lang select {
+  .topbar-lang-btn {
     min-width: 2.9rem;
-    max-width: 3.3rem;
     font-size: 0.78rem;
   }
   .category-label {

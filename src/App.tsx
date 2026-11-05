@@ -338,6 +338,8 @@ export function App() {
   const auth = useOptionalAuth()
   const ensureAuth = useRequireAuth()
   const [lang, setLang] = useState<Lang>(browserLang)
+  const [langMenuOpen, setLangMenuOpen] = useState(false)
+  const langMenuRef = useRef<HTMLDivElement | null>(null)
   const [tools, setTools] = useState<Tool[]>([])
   const [category, setCategory] = useState<NavCategoryId>(() => (
     window.location.pathname === '/contact' || window.location.pathname === '/privacy' ? 'help'
@@ -416,6 +418,22 @@ export function App() {
     localStorage.setItem('tools-lang', lang)
     document.documentElement.lang = lang === 'zh' ? 'zh-Hans' : lang === 'yue' ? 'zh-HK' : lang
   }, [lang])
+
+  useEffect(() => {
+    if (!langMenuOpen) return
+    const onDoc = (event: MouseEvent) => {
+      if (!langMenuRef.current?.contains(event.target as Node)) setLangMenuOpen(false)
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLangMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [langMenuOpen])
 
   useEffect(() => {
     const onPop = () => {
@@ -1196,20 +1214,38 @@ export function App() {
           })}
         </nav>
         <div className="top-actions">
-          <label className="topbar-lang" title={t(lang, 'language')}>
-            <span className="sr-only">{t(lang, 'language')}</span>
-            <select
-              value={lang}
-              onChange={(event) => setLang(event.target.value as Lang)}
+          <div className="topbar-lang" ref={langMenuRef}>
+            <button
+              type="button"
+              className="topbar-lang-btn"
               aria-label={t(lang, 'language')}
+              aria-haspopup="listbox"
+              aria-expanded={langMenuOpen}
+              title={LANGS.find((item) => item.id === lang)?.label || t(lang, 'language')}
+              onClick={() => setLangMenuOpen((open) => !open)}
             >
-              {LANGS.map((item) => (
-                <option key={item.id} value={item.id} title={item.label}>
-                  {item.short}
-                </option>
-              ))}
-            </select>
-          </label>
+              <span>{LANGS.find((item) => item.id === lang)?.short || 'EN'}</span>
+              <MdIcon name="expand_more" />
+            </button>
+            {langMenuOpen ? (
+              <ul className="topbar-lang-menu" role="listbox" aria-label={t(lang, 'language')}>
+                {LANGS.map((item) => (
+                  <li key={item.id} role="option" aria-selected={item.id === lang}>
+                    <button
+                      type="button"
+                      className={item.id === lang ? 'on' : undefined}
+                      onClick={() => {
+                        setLang(item.id)
+                        setLangMenuOpen(false)
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
           {auth.configured && (
             <button
               type="button"
