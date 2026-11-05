@@ -28,6 +28,8 @@ type Props = {
   accent: string
   /** Bumps when a search finishes — collapses Notes unless pinned or actively editing. */
   collapseToken?: number
+  /** Bumps when search results are cleared — opens Notes again. */
+  expandToken?: number
   onUseAsSearch?: (text: string) => void
 }
 
@@ -148,7 +150,7 @@ function paintCanvas(canvas: HTMLCanvasElement, strokes: NoteStroke[]) {
   }
 }
 
-export function NotesPanel({ lang, accent, collapseToken = 0, onUseAsSearch }: Props) {
+export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, onUseAsSearch }: Props) {
   const ensureAuth = useRequireAuth()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const drawing = useRef(false)
@@ -169,13 +171,8 @@ export function NotesPanel({ lang, accent, collapseToken = 0, onUseAsSearch }: P
       return false
     }
   })
-  const [open, setOpen] = useState(() => {
-    try {
-      return localStorage.getItem(NOTES_PIN_KEY) === '1'
-    } catch {
-      return false
-    }
-  })
+  /** Start open so Notes is ready; Pin is optional (keeps Notes open during search). */
+  const [open, setOpen] = useState(true)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -194,6 +191,11 @@ export function NotesPanel({ lang, accent, collapseToken = 0, onUseAsSearch }: P
     if (recording || busy || drawing.current || editingInside) return
     setOpen(false)
   }, [collapseToken, pinned, recording, busy])
+
+  useEffect(() => {
+    if (expandToken <= 0) return
+    setOpen(true)
+  }, [expandToken])
 
   function setPinnedPersist(next: boolean) {
     setPinned(next)

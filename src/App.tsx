@@ -354,6 +354,7 @@ export function App() {
   const [searchHits, setSearchHits] = useState<SearchHit[]>([])
   const [searchMeta, setSearchMeta] = useState<SearchMeta>({})
   const [notesCollapseToken, setNotesCollapseToken] = useState(0)
+  const [notesExpandToken, setNotesExpandToken] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [chat, setChat] = useState<{ role: 'user' | 'assistant'; text: string; notice?: boolean }[]>([])
@@ -589,6 +590,7 @@ export function App() {
     setError('')
     setSearchHits([])
     setSearchMeta({})
+    setNotesExpandToken((n) => n + 1)
   }
 
   function clearSearchImage() {
@@ -1539,6 +1541,7 @@ export function App() {
                 lang={lang}
                 accent={accent.accent}
                 collapseToken={notesCollapseToken}
+                expandToken={notesExpandToken}
                 onUseAsSearch={(value) => {
                   const query = value.replace(/\s+/g, ' ').trim()
                   setSearchQuery(query)
