@@ -1423,13 +1423,13 @@ export function App() {
               onOpenRemovePrivacy={() => {
                 const strip = tools.find((tool) => tool.id === 'image_strip_exif')
                 if (!strip) return
-                setCategory('image')
+                setCategory('safety')
                 setSelected(strip)
-                window.history.pushState({}, '', '/')
+                window.history.pushState({}, '', '/safety')
               }}
             />
           )}
-          {category === 'safety' && selected && selected.id !== 'image_privacy_check' && (
+          {category === 'safety' && selected && (selected.id === 'scan_file' || selected.id === 'scan_message') && (
             <ScanPage
               key={selected.id === 'scan_message' ? 'scan_message' : 'scan_file'}
               lang={lang}
@@ -1798,9 +1798,10 @@ export function App() {
               </div>
             </div>
           )}
-          {category !== 'help' && category !== 'safety' && category !== 'ai' && selected && selected.id !== 'web_search' && selected.id !== 'translate'
+          {((category !== 'help' && category !== 'safety' && category !== 'ai' && selected && selected.id !== 'web_search' && selected.id !== 'translate'
             && selected.id !== 'summarize' && selected.id !== 'generate_document'
-            && selected.id !== 'youtube_mp4' && selected.id !== 'youtube_mp3' && selected.id !== 'youtube_download' && (
+            && selected.id !== 'youtube_mp4' && selected.id !== 'youtube_mp3' && selected.id !== 'youtube_download')
+            || (category === 'safety' && selected?.id === 'image_strip_exif')) && selected && (
             <form key={selected.id} className="tool-form modern-tool" onSubmit={onRun}>
               <div className="tool-hero">
                 <ToolGlyph category={selected.category} />
