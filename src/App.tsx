@@ -1354,23 +1354,25 @@ export function App() {
               <div className="search-controls search-controls-inline">
                 <fieldset className="search-kinds search-kinds-region-one-line">
                   <legend className="sr-only">{t(lang, 'searchMode')}</legend>
-                  {([
-                    ['people', t(lang, 'modePeople')],
-                    ['topic', t(lang, 'modeTopic')],
-                    ['product', t(lang, 'modeProduct')],
-                  ] as const).map(([value, label]) => (
-                    <label key={value} className="search-kind">
-                      <input
-                        type="checkbox"
-                        checked={searchKind === value}
-                        onChange={() => {
-                          setSearchKind((current) => (current === value ? '' : value))
-                          if (value !== 'product') setSearchBarcode('')
-                        }}
-                      />
-                      {label}
-                    </label>
-                  ))}
+                  <span className="search-mode-cluster">
+                    {([
+                      ['people', t(lang, 'modePeople')],
+                      ['topic', t(lang, 'modeTopic')],
+                      ['product', t(lang, 'modeProduct')],
+                    ] as const).map(([value, label]) => (
+                      <label key={value} className="search-kind">
+                        <input
+                          type="checkbox"
+                          checked={searchKind === value}
+                          onChange={() => {
+                            setSearchKind((current) => (current === value ? '' : value))
+                            if (value !== 'product') setSearchBarcode('')
+                          }}
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </span>
                   <span className="search-region-cluster">
                     <span className="search-region-legend">{t(lang, 'searchRegion')}</span>
                     <label className="search-kind">
