@@ -30,8 +30,18 @@ type Props = {
 
 type FileHandle = FileSystemFileHandle
 
-const NOTE_EXT = '.txt'
-const NOTE_MIME = 'text/plain'
+/** App-owned note file: text + handwriting strokes. Not plain .txt (that cannot store drawing). */
+const NOTE_EXT = '.note'
+const NOTE_MIME = 'application/json'
+const NOTE_FORMAT_VERSION = 1
+
+type NoteFilePayload = {
+  format: 'ai-forall-note'
+  version: number
+  text: string
+  strokes: NoteStroke[]
+  updatedAt: number
+}
 
 function defaultNoteName(): string {
   const d = new Date()
@@ -41,11 +51,41 @@ function defaultNoteName(): string {
   return `note-${y}-${m}-${day}${NOTE_EXT}`
 }
 
-/** Always save notes as .txt — app chooses the format, not the user. */
+/** Always save as .note — app chooses the format, not the user. */
 function ensureNoteFileName(name: string): string {
   const trimmed = (name || '').trim() || defaultNoteName()
   const bare = trimmed.replace(/\.[^.]+$/i, '')
   return `${bare || 'note'}${NOTE_EXT}`
+}
+
+function serializeNote(text: string, strokes: NoteStroke[]): string {
+  const payload: NoteFilePayload = {
+    format: 'ai-forall-note',
+    version: NOTE_FORMAT_VERSION,
+    text,
+    strokes,
+    updatedAt: Date.now(),
+  }
+  return `${JSON.stringify(payload, null, 2)}\n`
+}
+
+function parseNoteFile(raw: string): { text: string; strokes: NoteStroke[] } {
+  const trimmed = raw.trim()
+  if (!trimmed) return { text: '', strokes: [] }
+  // Plain .txt from older saves: text only
+  if (!trimmed.startsWith('{')) {
+    return { text: raw, strokes: [] }
+  }
+  try {
+    const data = JSON.parse(trimmed) as Partial<NoteFilePayload> & { title?: string }
+    if (data && (data.format === 'ai-forall-note' || Array.isArray(data.strokes) || typeof data.text === 'string')) {
+      const strokes = Array.isArray(data.strokes) ? (data.strokes as NoteStroke[]) : []
+      return { text: typeof data.text === 'string' ? data.text : '', strokes }
+    }
+  } catch {
+    // fall through to plain text
+  }
+  return { text: raw, strokes: [] }
 }
 
 function supportsFilePicker(): boolean {
@@ -174,7 +214,7 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
   }
 
   async function onSave() {
-    const payload = text
+    const payload = serializeNote(text, strokes)
     const suggested = ensureNoteFileName(fileLabel || defaultNoteName())
     try {
       if (fileHandleRef.current) {
@@ -232,15 +272,19 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
         excludeAcceptAllOption: true,
         types: [{
           description: t(lang, 'noteFileType'),
-          accept: { [NOTE_MIME]: [NOTE_EXT] },
+          accept: {
+            [NOTE_MIME]: [NOTE_EXT],
+            'text/plain': ['.txt'],
+          },
         }],
       }) as FileHandle[]
       const file = await handle.getFile()
       const contents = await file.text()
+      const parsed = parseNoteFile(contents)
       fileHandleRef.current = handle
       setFileLabel(ensureNoteFileName(handle.name || file.name))
-      setText(contents)
-      setStrokes([])
+      setText(parsed.text)
+      setStrokes(parsed.strokes)
       setStatus(t(lang, 'noteOpenedFile').replace('{name}', handle.name || file.name))
     } catch (exc) {
       if (exc instanceof DOMException && exc.name === 'AbortError') {
