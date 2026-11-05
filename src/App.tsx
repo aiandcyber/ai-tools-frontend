@@ -1352,7 +1352,7 @@ export function App() {
                 />
               ) : null}
               <div className="search-controls search-controls-inline">
-                <fieldset className="search-kinds">
+                <fieldset className="search-kinds search-kinds-region-one-line">
                   <legend className="sr-only">{t(lang, 'searchMode')}</legend>
                   {([
                     ['people', t(lang, 'modePeople')],
@@ -1371,17 +1371,12 @@ export function App() {
                       {label}
                     </label>
                   ))}
-                </fieldset>
-                <fieldset className="search-kinds search-region-row">
-                  <legend className="search-region-legend">{t(lang, 'searchRegion')}</legend>
+                  <span className="search-region-legend">{t(lang, 'searchRegion')}</span>
                   <label className="search-kind">
                     <input
                       type="checkbox"
                       checked={regionMode === 'auto'}
-                      onChange={() => {
-                        setRegionMode('auto')
-                        setRegionCustom('')
-                      }}
+                      onChange={() => setRegionMode('auto')}
                     />
                     {t(lang, 'modeAuto')}
                   </label>
@@ -1393,16 +1388,17 @@ export function App() {
                     />
                     {t(lang, 'regionType')}
                   </label>
-                  {regionMode === 'manual' ? (
-                    <input
-                      className="region-type-input"
-                      type="text"
-                      value={regionCustom}
-                      onChange={(event) => setRegionCustom(event.target.value)}
-                      placeholder={t(lang, 'regionTypePlaceholder')}
-                      aria-label={t(lang, 'regionType')}
-                    />
-                  ) : null}
+                  <input
+                    className="region-type-input"
+                    type="text"
+                    value={regionCustom}
+                    onChange={(event) => {
+                      setRegionCustom(event.target.value)
+                      if (event.target.value.trim()) setRegionMode('manual')
+                    }}
+                    placeholder={t(lang, 'regionTypePlaceholder')}
+                    aria-label={t(lang, 'regionType')}
+                  />
                 </fieldset>
                 <input type="hidden" name="region" value={regionMode === 'manual' ? (regionCustom.trim() || 'CUSTOM') : 'AUTO'} />
                 <input type="hidden" name="location" value={regionMode === 'manual' ? regionCustom.trim() : ''} />
@@ -1429,7 +1425,17 @@ export function App() {
               )}
             </form>
           )}
-          {category === 'ai' && <NotesPanel lang={lang} accent={accent.accent} />}
+          {category === 'ai' && (
+            <NotesPanel
+              lang={lang}
+              accent={accent.accent}
+              onUseAsSearch={(value) => {
+                setSearchQuery(value)
+                setError('')
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+            />
+          )}
           {category !== 'help' && category !== 'safety' && category !== 'ai' && selected && selected.id === 'translate' && (
             <form key={selected.id} className="tool-form translate-form" onSubmit={onRun}>
               <div className="tool-hero">

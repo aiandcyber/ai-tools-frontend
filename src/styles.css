@@ -603,23 +603,27 @@ button { cursor: pointer; }
   justify-content: center;
 }
 
+.search-kinds-region-one-line {
+  align-items: center;
+  row-gap: 0.55rem;
+}
+
 .search-region-row {
   align-items: center;
   flex-wrap: wrap;
 }
 
 .search-region-legend {
-  float: left;
   padding: 0;
-  margin: 0 0.75rem 0 0;
+  margin: 0;
   color: var(--muted);
   font-size: 0.92rem;
   font-weight: 600;
 }
 
 .region-type-input {
-  min-width: 12rem;
-  flex: 1 1 12rem;
+  min-width: 10rem;
+  width: min(14rem, 100%);
   margin: 0;
   padding: 0.45rem 0.7rem;
   border: 1px solid var(--line);
@@ -734,6 +738,11 @@ button { cursor: pointer; }
   display: flex;
   gap: 0.75rem;
   align-items: center;
+}
+
+.note-status {
+  font-weight: 650;
+  margin-top: 0.55rem;
 }
 
 .search-kind {

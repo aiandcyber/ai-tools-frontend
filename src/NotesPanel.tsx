@@ -1,50 +1,43 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { runTool, transcribeAudio } from './api'
 import { t, type Lang } from './i18n'
-import {
-  deleteNote,
-  downloadNoteFile,
-  getNote,
-  listNotes,
-  newNoteId,
-  saveNote,
-  type NoteStroke,
-  type UserNote,
-} from './notesStore'
+import { type NoteStroke } from './notesStore'
+import { useRequireAuth } from './useRequireAuth'
 
 type Props = {
   lang: Lang
   accent: string
+  onUseAsSearch?: (text: string) => void
 }
 
-export function NotesPanel({ lang, accent }: Props) {
-  return (
-    <div className="notes-panel">
-      <HandwrittenNotes lang={lang} accent={accent} />
-      <LiveAudioNotes lang={lang} accent={accent} />
-    </div>
-  )
+type FileHandle = FileSystemFileHandle
+
+function defaultNoteName(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `note-${y}-${m}-${day}.txt`
 }
 
-function HandwrittenNotes({ lang, accent }: Props) {
+function supportsFilePicker(): boolean {
+  return typeof window !== 'undefined' && 'showSaveFilePicker' in window && 'showOpenFilePicker' in window
+}
+
+export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
+  const ensureAuth = useRequireAuth()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const drawing = useRef(false)
   const current = useRef<NoteStroke | null>(null)
-  const [noteId, setNoteId] = useState(() => newNoteId())
-  const [title, setTitle] = useState('Untitled note')
+  const fileHandleRef = useRef<FileHandle | null>(null)
+  const [fileLabel, setFileLabel] = useState('')
   const [text, setText] = useState('')
   const [strokes, setStrokes] = useState<NoteStroke[]>([])
-  const [notes, setNotes] = useState<UserNote[]>([])
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
-
-  async function refreshList() {
-    setNotes(await listNotes())
-  }
-
-  useEffect(() => {
-    void refreshList()
-  }, [])
+  const [recording, setRecording] = useState(false)
+  const mediaRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -100,45 +93,98 @@ function HandwrittenNotes({ lang, accent }: Props) {
     current.current = null
   }
 
-  async function onSave() {
-    const note: UserNote = {
-      id: noteId,
-      title: title.trim() || 'Untitled note',
-      text,
-      strokes,
-      updatedAt: Date.now(),
-      kind: strokes.length ? 'handwritten' : 'mixed',
-    }
-    await saveNote(note)
-    setStatus(t(lang, 'noteSaved'))
-    await refreshList()
-  }
-
-  async function onOpen(id: string) {
-    const note = await getNote(id)
-    if (!note) {
-      setStatus(t(lang, 'noteMissing'))
-      return
-    }
-    setNoteId(note.id)
-    setTitle(note.title)
-    setText(note.text)
-    setStrokes(note.strokes || [])
-    setStatus(t(lang, 'noteOpened'))
-  }
-
   function onNew() {
-    setNoteId(newNoteId())
-    setTitle('Untitled note')
+    fileHandleRef.current = null
+    setFileLabel('')
     setText('')
     setStrokes([])
     setStatus(t(lang, 'noteNew'))
+  }
+
+  async function writeToHandle(handle: FileHandle, contents: string) {
+    const writable = await handle.createWritable()
+    await writable.write(contents)
+    await writable.close()
+  }
+
+  async function onSave() {
+    const payload = text
+    const suggested = fileLabel || defaultNoteName()
+    try {
+      if (fileHandleRef.current) {
+        await writeToHandle(fileHandleRef.current, payload)
+        setStatus(t(lang, 'noteSavedFile').replace('{name}', fileHandleRef.current.name || suggested))
+        return
+      }
+      if (supportsFilePicker()) {
+        try {
+          // @ts-expect-error File System Access API
+          const handle = await window.showSaveFilePicker({
+            suggestedName: suggested,
+            types: [{ description: 'Text note', accept: { 'text/plain': ['.txt'] } }],
+          }) as FileHandle
+          await writeToHandle(handle, payload)
+          fileHandleRef.current = handle
+          setFileLabel(handle.name || suggested)
+          setStatus(t(lang, 'noteSavedFile').replace('{name}', handle.name || suggested))
+          return
+        } catch (exc) {
+          if (exc instanceof DOMException && exc.name === 'AbortError') {
+            setStatus(t(lang, 'cancelled'))
+            return
+          }
+        }
+      }
+      // Fallback: browser download with default name
+      const blob = new Blob([payload], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = suggested
+      a.click()
+      URL.revokeObjectURL(url)
+      setFileLabel(suggested)
+      setStatus(t(lang, 'noteSavedDownload').replace('{name}', suggested))
+    } catch (exc) {
+      setStatus(exc instanceof Error ? exc.message : t(lang, 'somethingWrong'))
+    }
+  }
+
+  async function onOpen() {
+    try {
+      if (!supportsFilePicker()) {
+        setStatus(t(lang, 'noteOpenUnsupported'))
+        return
+      }
+      // @ts-expect-error File System Access API
+      const [handle] = await window.showOpenFilePicker({
+        multiple: false,
+        types: [{ description: 'Text note', accept: { 'text/plain': ['.txt', '.md'] } }],
+      }) as FileHandle[]
+      const file = await handle.getFile()
+      const contents = await file.text()
+      fileHandleRef.current = handle
+      setFileLabel(handle.name || file.name)
+      setText(contents)
+      setStrokes([])
+      setStatus(t(lang, 'noteOpenedFile').replace('{name}', handle.name || file.name))
+    } catch (exc) {
+      if (exc instanceof DOMException && exc.name === 'AbortError') {
+        setStatus(t(lang, 'cancelled'))
+        return
+      }
+      setStatus(exc instanceof Error ? exc.message : t(lang, 'somethingWrong'))
+    }
   }
 
   async function runOnText(toolId: 'summarize' | 'translate') {
     const body = text.trim()
     if (!body) {
       setStatus(t(lang, 'noteNeedText'))
+      return
+    }
+    if (!(await ensureAuth())) {
+      setStatus(t(lang, 'signIn'))
       return
     }
     setBusy(true)
@@ -151,9 +197,17 @@ function HandwrittenNotes({ lang, accent }: Props) {
         form.set('language', lang === 'yue' ? 'yue' : lang === 'zh' ? 'zh' : 'en')
       }
       const result = await runTool(toolId, form)
-      const next = result.message || body
+      let next = (result.message || '').trim()
+      if (!next && result.downloads?.[0]?.url) {
+        const res = await fetch(result.downloads[0].url)
+        next = (await res.text()).trim()
+      }
+      if (!next) {
+        setStatus(t(lang, 'somethingWrong'))
+        return
+      }
       setText(next)
-      setStatus(result.message || t(lang, 'result'))
+      setStatus(t(lang, toolId === 'summarize' ? 'noteSummarized' : 'noteTranslated'))
     } catch (exc) {
       setStatus(exc instanceof Error ? exc.message : t(lang, 'somethingWrong'))
     } finally {
@@ -161,68 +215,55 @@ function HandwrittenNotes({ lang, accent }: Props) {
     }
   }
 
-  return (
-    <section className="note-card">
-      <h3>{t(lang, 'handwrittenNotes')}</h3>
-      <p>{t(lang, 'handwrittenNotesDesc')}</p>
-      <div className="note-toolbar">
-        <input value={title} onChange={(e) => setTitle(e.target.value)} aria-label={t(lang, 'noteTitle')} />
-        <button type="button" className="btn-secondary" onClick={onNew}>{t(lang, 'noteNew')}</button>
-        <button type="button" className="btn-secondary" onClick={() => void onSave()} disabled={busy}>{t(lang, 'noteSave')}</button>
-        <button type="button" className="btn-secondary" onClick={() => void runOnText('summarize')} disabled={busy}>{t(lang, 'noteSummarize')}</button>
-        <button type="button" className="btn-secondary" onClick={() => void runOnText('translate')} disabled={busy}>{t(lang, 'noteTranslate')}</button>
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => downloadNoteFile({
-            id: noteId, title, text, strokes, updatedAt: Date.now(), kind: 'handwritten',
-          })}
-        >
-          {t(lang, 'noteExport')}
-        </button>
-      </div>
-      <canvas
-        ref={canvasRef}
-        className="note-canvas"
-        width={900}
-        height={320}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
-      />
-      <textarea
-        className="note-text"
-        rows={5}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder={t(lang, 'noteTextPlaceholder')}
-      />
-      <div className="note-list">
-        <strong>{t(lang, 'noteLibrary')}</strong>
-        <ul>
-          {notes.map((note) => (
-            <li key={note.id}>
-              <button type="button" className="linkish" onClick={() => void onOpen(note.id)}>{note.title}</button>
-              <button type="button" className="linkish" onClick={() => void deleteNote(note.id).then(refreshList)}>{t(lang, 'noteDelete')}</button>
-            </li>
-          ))}
-        </ul>
-      </div>
-      {status ? <p className="field-hint" style={{ color: accent }}>{status}</p> : null}
-    </section>
-  )
-}
+  async function handwritingToText() {
+    const canvas = canvasRef.current
+    if (!canvas || !strokes.length) {
+      setStatus(t(lang, 'noteNeedHandwriting'))
+      return
+    }
+    if (!(await ensureAuth())) {
+      setStatus(t(lang, 'signIn'))
+      return
+    }
+    setBusy(true)
+    setStatus(t(lang, 'noteOcrWorking'))
+    try {
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+      if (!blob) {
+        setStatus(t(lang, 'somethingWrong'))
+        return
+      }
+      const form = new FormData()
+      form.append('files', new File([blob], 'handwriting.png', { type: 'image/png' }))
+      const result = await runTool('ocr', form)
+      let next = ''
+      if (result.downloads?.[0]?.url) {
+        const res = await fetch(result.downloads[0].url)
+        next = (await res.text()).trim()
+      }
+      if (!next) next = (result.message || '').trim()
+      if (!next || /^ocr complete$/i.test(next)) {
+        setStatus(t(lang, 'noteOcrEmpty'))
+        return
+      }
+      setText((prev) => (prev.trim() ? `${prev.trim()}\n${next}` : next))
+      setStatus(t(lang, 'noteOcrDone'))
+    } catch (exc) {
+      setStatus(exc instanceof Error ? exc.message : t(lang, 'somethingWrong'))
+    } finally {
+      setBusy(false)
+    }
+  }
 
-function LiveAudioNotes({ lang, accent }: Props) {
-  const [recording, setRecording] = useState(false)
-  const [transcript, setTranscript] = useState('')
-  const [title, setTitle] = useState('Live audio note')
-  const [status, setStatus] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [noteId, setNoteId] = useState(() => newNoteId())
-  const mediaRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<Blob[]>([])
+  function useAsSearch() {
+    const body = text.trim()
+    if (!body) {
+      setStatus(t(lang, 'noteNeedText'))
+      return
+    }
+    onUseAsSearch?.(body)
+    setStatus(t(lang, 'noteSentToSearch'))
+  }
 
   async function startRec() {
     setStatus('')
@@ -260,8 +301,12 @@ function LiveAudioNotes({ lang, accent }: Props) {
     setBusy(true)
     setStatus(t(lang, 'uploadCheckScan'))
     try {
+      if (!(await ensureAuth())) {
+        setStatus(t(lang, 'signIn'))
+        return
+      }
       const heard = await transcribeAudio(blob, lang)
-      setTranscript((prev) => (prev ? `${prev}\n${heard}` : heard))
+      setText((prev) => (prev ? `${prev}\n${heard}` : heard))
       setStatus(t(lang, 'noteTranscribed'))
     } catch (exc) {
       setStatus(exc instanceof Error ? exc.message : t(lang, 'voiceFailed'))
@@ -270,48 +315,19 @@ function LiveAudioNotes({ lang, accent }: Props) {
     }
   }
 
-  async function onSave() {
-    const note: UserNote = {
-      id: noteId,
-      title: title.trim() || 'Live audio note',
-      text: transcript,
-      strokes: [],
-      updatedAt: Date.now(),
-      kind: 'live_audio',
-    }
-    await saveNote(note)
-    setStatus(t(lang, 'noteSaved'))
-  }
-
-  async function act(toolId: 'summarize' | 'translate') {
-    if (!transcript.trim()) {
-      setStatus(t(lang, 'noteNeedText'))
-      return
-    }
-    setBusy(true)
-    try {
-      const form = new FormData()
-      form.set('text', transcript)
-      if (toolId === 'translate') {
-        form.set('source_language', 'auto')
-        form.set('language', lang === 'yue' ? 'yue' : lang === 'zh' ? 'zh' : 'en')
-      }
-      const result = await runTool(toolId, form)
-      setTranscript(result.message || transcript)
-      setStatus(result.message || t(lang, 'result'))
-    } catch (exc) {
-      setStatus(exc instanceof Error ? exc.message : t(lang, 'somethingWrong'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
     <section className="note-card">
-      <h3>{t(lang, 'liveAudioNotes')}</h3>
-      <p>{t(lang, 'liveAudioNotesDesc')}</p>
+      <h3>{t(lang, 'notesTitle')}</h3>
+      <p>{t(lang, 'notesDesc')}</p>
+      {fileLabel ? <p className="field-hint">{t(lang, 'noteOpenFile')}: {fileLabel}</p> : null}
       <div className="note-toolbar">
-        <input value={title} onChange={(e) => setTitle(e.target.value)} aria-label={t(lang, 'noteTitle')} />
+        <button type="button" className="btn-secondary" onClick={onNew} disabled={busy}>{t(lang, 'noteNew')}</button>
+        <button type="button" className="btn-secondary" onClick={() => void onOpen()} disabled={busy}>{t(lang, 'noteOpen')}</button>
+        <button type="button" className="btn-secondary" onClick={() => void onSave()} disabled={busy}>{t(lang, 'noteSave')}</button>
+        <button type="button" className="btn-secondary" onClick={() => void runOnText('summarize')} disabled={busy}>{t(lang, 'noteSummarize')}</button>
+        <button type="button" className="btn-secondary" onClick={() => void runOnText('translate')} disabled={busy}>{t(lang, 'noteTranslate')}</button>
+        <button type="button" className="btn-secondary" onClick={() => void handwritingToText()} disabled={busy}>{t(lang, 'noteHandwritingToText')}</button>
+        <button type="button" className="btn-secondary" onClick={useAsSearch} disabled={busy}>{t(lang, 'noteUseAsSearch')}</button>
         {!recording ? (
           <button type="button" className="btn-primary" style={{ background: accent }} onClick={() => void startRec()} disabled={busy}>
             {t(lang, 'noteStartListen')}
@@ -319,30 +335,26 @@ function LiveAudioNotes({ lang, accent }: Props) {
         ) : (
           <button type="button" className="btn-secondary" onClick={stopRec}>{t(lang, 'noteStopListen')}</button>
         )}
-        <button type="button" className="btn-secondary" onClick={() => void onSave()} disabled={busy}>{t(lang, 'noteSave')}</button>
-        <button type="button" className="btn-secondary" onClick={() => void act('summarize')} disabled={busy}>{t(lang, 'noteSummarize')}</button>
-        <button type="button" className="btn-secondary" onClick={() => void act('translate')} disabled={busy}>{t(lang, 'noteTranslate')}</button>
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => {
-            setNoteId(newNoteId())
-            setTitle('Live audio note')
-            setTranscript('')
-            setStatus(t(lang, 'noteNew'))
-          }}
-        >
-          {t(lang, 'noteNew')}
-        </button>
       </div>
+      <canvas
+        ref={canvasRef}
+        className="note-canvas"
+        width={900}
+        height={320}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
+      />
       <textarea
         className="note-text"
-        rows={6}
-        value={transcript}
-        onChange={(e) => setTranscript(e.target.value)}
-        placeholder={t(lang, 'liveAudioPlaceholder')}
+        rows={7}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={t(lang, 'noteTextPlaceholder')}
       />
-      {status ? <p className="field-hint" style={{ color: accent }}>{status}</p> : null}
+      {status ? <p className="field-hint note-status" style={{ color: accent }} role="status">{status}</p> : null}
+      <p className="field-hint">{t(lang, 'noteKeepOpenHint')}</p>
     </section>
   )
 }
