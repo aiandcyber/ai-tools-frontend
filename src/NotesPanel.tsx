@@ -183,12 +183,13 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
       setStatus(t(lang, 'noteNeedText'))
       return
     }
+    setBusy(true)
+    setStatus(t(lang, 'working'))
     if (!(await ensureAuth())) {
+      setBusy(false)
       setStatus(t(lang, 'signIn'))
       return
     }
-    setBusy(true)
-    setStatus(t(lang, 'working'))
     try {
       const form = new FormData()
       form.set('text', body)
@@ -221,12 +222,13 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
       setStatus(t(lang, 'noteNeedHandwriting'))
       return
     }
+    setBusy(true)
+    setStatus(t(lang, 'noteOcrWorking'))
     if (!(await ensureAuth())) {
+      setBusy(false)
       setStatus(t(lang, 'signIn'))
       return
     }
-    setBusy(true)
-    setStatus(t(lang, 'noteOcrWorking'))
     try {
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
       if (!blob) {
@@ -302,6 +304,7 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
     setStatus(t(lang, 'uploadCheckScan'))
     try {
       if (!(await ensureAuth())) {
+        setBusy(false)
         setStatus(t(lang, 'signIn'))
         return
       }
@@ -336,6 +339,7 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
           <button type="button" className="btn-secondary" onClick={stopRec}>{t(lang, 'noteStopListen')}</button>
         )}
       </div>
+      {status ? <p className="field-hint note-status" style={{ color: accent }} role="status">{status}</p> : null}
       <canvas
         ref={canvasRef}
         className="note-canvas"
@@ -353,7 +357,6 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
         onChange={(e) => setText(e.target.value)}
         placeholder={t(lang, 'noteTextPlaceholder')}
       />
-      {status ? <p className="field-hint note-status" style={{ color: accent }} role="status">{status}</p> : null}
       <p className="field-hint">{t(lang, 'noteKeepOpenHint')}</p>
     </section>
   )

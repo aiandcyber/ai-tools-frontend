@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useRef, type ReactNode } from 'react'
 import { useAuth0 } from '@auth0/auth0-react'
 import { AUTH_REQUIRED } from './config'
 
@@ -8,15 +8,20 @@ const RequireAuthContext = createContext<EnsureAuth>(async () => true)
 
 function RequireAuthProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading, loginWithRedirect } = useAuth0()
+  const authRef = useRef({ isAuthenticated, isLoading })
+  authRef.current = { isAuthenticated, isLoading }
 
   const ensureAuth = useCallback(async (): Promise<boolean> => {
-    if (isLoading) return false
-    if (isAuthenticated) return true
+    const deadline = Date.now() + 10_000
+    while (authRef.current.isLoading && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 40))
+    }
+    if (authRef.current.isAuthenticated) return true
     await loginWithRedirect({
       appState: { returnTo: window.location.pathname + window.location.search },
     })
     return false
-  }, [isAuthenticated, isLoading, loginWithRedirect])
+  }, [loginWithRedirect])
 
   return (
     <RequireAuthContext.Provider value={ensureAuth}>{children}</RequireAuthContext.Provider>

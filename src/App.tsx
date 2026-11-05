@@ -1371,34 +1371,36 @@ export function App() {
                       {label}
                     </label>
                   ))}
-                  <span className="search-region-legend">{t(lang, 'searchRegion')}</span>
-                  <label className="search-kind">
+                  <span className="search-region-cluster">
+                    <span className="search-region-legend">{t(lang, 'searchRegion')}</span>
+                    <label className="search-kind">
+                      <input
+                        type="checkbox"
+                        checked={regionMode === 'auto'}
+                        onChange={() => setRegionMode('auto')}
+                      />
+                      {t(lang, 'modeAuto')}
+                    </label>
+                    <label className="search-kind">
+                      <input
+                        type="checkbox"
+                        checked={regionMode === 'manual'}
+                        onChange={() => setRegionMode((current) => (current === 'manual' ? 'auto' : 'manual'))}
+                      />
+                      {t(lang, 'regionType')}
+                    </label>
                     <input
-                      type="checkbox"
-                      checked={regionMode === 'auto'}
-                      onChange={() => setRegionMode('auto')}
+                      className="region-type-input"
+                      type="text"
+                      value={regionCustom}
+                      onChange={(event) => {
+                        setRegionCustom(event.target.value)
+                        if (event.target.value.trim()) setRegionMode('manual')
+                      }}
+                      placeholder={t(lang, 'regionTypePlaceholder')}
+                      aria-label={t(lang, 'regionType')}
                     />
-                    {t(lang, 'modeAuto')}
-                  </label>
-                  <label className="search-kind">
-                    <input
-                      type="checkbox"
-                      checked={regionMode === 'manual'}
-                      onChange={() => setRegionMode((current) => (current === 'manual' ? 'auto' : 'manual'))}
-                    />
-                    {t(lang, 'regionType')}
-                  </label>
-                  <input
-                    className="region-type-input"
-                    type="text"
-                    value={regionCustom}
-                    onChange={(event) => {
-                      setRegionCustom(event.target.value)
-                      if (event.target.value.trim()) setRegionMode('manual')
-                    }}
-                    placeholder={t(lang, 'regionTypePlaceholder')}
-                    aria-label={t(lang, 'regionType')}
-                  />
+                  </span>
                 </fieldset>
                 <input type="hidden" name="region" value={regionMode === 'manual' ? (regionCustom.trim() || 'CUSTOM') : 'AUTO'} />
                 <input type="hidden" name="location" value={regionMode === 'manual' ? regionCustom.trim() : ''} />
