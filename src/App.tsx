@@ -568,6 +568,13 @@ export function App() {
     return t(lang, id)
   }
 
+  function clearSearchResults() {
+    setMessage('')
+    setError('')
+    setSearchHits([])
+    setSearchMeta({})
+  }
+
   function clearSearchImage() {
     setSearchImage(null)
     setSearchImageUrl((current) => {
@@ -1483,6 +1490,19 @@ export function App() {
               </div>
               {error && <p className="error">{error}</p>}
               <div className="search-outcome">
+                {(message || searchHits.length > 0) ? (
+                  <div className="search-outcome-bar">
+                    <button
+                      type="button"
+                      className="btn-ghost search-clear-results"
+                      onClick={clearSearchResults}
+                      aria-label={t(lang, 'searchClearResults')}
+                    >
+                      <MdIcon name="close" />
+                      <span>{t(lang, 'searchClearResults')}</span>
+                    </button>
+                  </div>
+                ) : null}
                 {message ? (
                   <div className={`search-rec${searchMeta.report_unidentified ? ' unsure' : ''}${searchMeta.mode === 'product' ? ` ${productRecClass(searchMeta.buy_recommendation)}` : ''}`}>
                     <p>{message}</p>
@@ -1508,16 +1528,17 @@ export function App() {
                 collapseToken={notesCollapseToken}
                 onUseAsSearch={(value) => {
                   const query = value.replace(/\s+/g, ' ').trim()
-                  const mode = (searchKind === 'people' || searchKind === 'topic' || searchKind === 'product')
-                    ? searchKind
-                    : 'topic'
-                  if (!searchKind) setSearchKind('topic')
                   setSearchQuery(query)
-                  setError('')
                   window.scrollTo({ top: 0, behavior: 'smooth' })
                   requestAnimationFrame(() => {
                     document.querySelector<HTMLInputElement>('input[name="query"]')?.focus()
                   })
+                  const mode = searchKind
+                  if (mode !== 'people' && mode !== 'topic' && mode !== 'product') {
+                    setError(t(lang, 'chooseSearchType'))
+                    return
+                  }
+                  setError('')
                   void doSearch({ query, mode })
                 }}
               />
