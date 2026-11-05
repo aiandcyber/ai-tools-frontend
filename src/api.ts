@@ -76,6 +76,9 @@ export type SearchMeta = {
   missing_fields?: string[]
   privacy_sensitive?: boolean
   open_tool?: string
+  biometric?: unknown
+  gemini?: unknown
+  lens?: unknown
 }
 
 let tokenGetter: (() => Promise<string>) | null = null
@@ -351,6 +354,130 @@ export async function rejectSearchPerson(nodeId: string): Promise<{ message: str
   return {
     message: payload.message || '',
     knowledge: payload.knowledge,
+  }
+}
+
+export async function fileToImageB64(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i])
+  return btoa(binary)
+}
+
+export async function runVisionSearch(body: {
+  image_b64: string
+  mode?: string
+  language?: string
+  hint?: string
+  'cf-turnstile-response'?: string
+}, signal?: AbortSignal): Promise<{
+  ok: boolean
+  message: string
+  query: string
+  queries: string[]
+  results: SearchHit[]
+  meta: SearchMeta & { gemini?: unknown; lens?: unknown }
+}> {
+  const response = await apiFetch(apiUrl('/api/vision/search'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await headers()),
+    },
+    body: JSON.stringify(body),
+    signal,
+  })
+  const payload = await response.json().catch(() => ({ detail: response.statusText }))
+  if (!response.ok) throw new Error(userHttpError(response.status, payload.detail, 'Could not run camera vision. Please try again.'))
+  return {
+    ok: Boolean(payload.ok),
+    message: payload.message || '',
+    query: payload.query || '',
+    queries: payload.queries || [],
+    results: payload.results || [],
+    meta: payload.meta || {},
+  }
+}
+
+export async function searchBiometric(body: {
+  modality: 'face' | 'voice'
+  image_b64?: string
+  audio_b64?: string
+  vector?: number[]
+  limit?: number
+  'cf-turnstile-response'?: string
+}, signal?: AbortSignal): Promise<{
+  ok: boolean
+  modality: string
+  threshold: number
+  matches: Array<{
+    sample_id?: string
+    person_node_id?: string
+    person_name?: string
+    score?: number
+  }>
+  top: { sample_id?: string; person_node_id?: string; person_name?: string; score?: number } | null
+}> {
+  const response = await apiFetch(apiUrl('/api/biometrics/search'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await headers()),
+    },
+    body: JSON.stringify(body),
+    signal,
+  })
+  const payload = await response.json().catch(() => ({ detail: response.statusText }))
+  if (!response.ok) throw new Error(userHttpError(response.status, payload.detail, 'Could not match face/voice. Please try again.'))
+  return {
+    ok: Boolean(payload.ok),
+    modality: payload.modality || body.modality,
+    threshold: payload.threshold ?? 0,
+    matches: payload.matches || [],
+    top: payload.top || null,
+  }
+}
+
+export async function enrollBiometric(body: {
+  modality: 'face' | 'voice'
+  person_node_id?: string
+  name?: string
+  region?: string
+  image_b64?: string
+  audio_b64?: string
+  vector?: number[]
+  source_kind?: string
+  source_ref?: string
+  device_ref?: string
+  'cf-turnstile-response'?: string
+}): Promise<{
+  ok: boolean
+  sample_id: string
+  person_node_id: string
+  modality: string
+  local_ref: { sample_id: string; person_node_id: string; modality: string }
+}> {
+  const response = await apiFetch(apiUrl('/api/biometrics/enroll'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await headers()),
+    },
+    body: JSON.stringify(body),
+  })
+  const payload = await response.json().catch(() => ({ detail: response.statusText }))
+  if (!response.ok) throw new Error(userHttpError(response.status, payload.detail, 'Could not enroll biometric. Please try again.'))
+  return {
+    ok: Boolean(payload.ok),
+    sample_id: payload.sample_id || '',
+    person_node_id: payload.person_node_id || '',
+    modality: payload.modality || body.modality,
+    local_ref: payload.local_ref || {
+      sample_id: payload.sample_id || '',
+      person_node_id: payload.person_node_id || '',
+      modality: payload.modality || body.modality,
+    },
   }
 }
 

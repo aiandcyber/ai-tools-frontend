@@ -7,8 +7,11 @@ import {
   formatYoutubeError,
   isBackendUnreachable,
   probeYoutube,
+  fileToImageB64,
   runSearch,
   runTool,
+  runVisionSearch,
+  searchBiometric,
   sendChatStream,
   synthesizeSpeech,
   transcribeAudio,
@@ -855,6 +858,84 @@ export function App() {
     }
     if (resolved.file && (mode === 'people' || mode === 'product')) {
       setError('')
+      const jobId = crypto.randomUUID().replace(/-/g, '')
+      const controller = new AbortController()
+      runAbortRef.current = { controller, jobId }
+      const hintTimer = startProgressHints()
+      setBusy(true)
+      let followUpQuery = ''
+      let followUpMode: 'people' | 'product' = mode
+      let skipFollowUp = false
+      try {
+        let turnstileToken = ''
+        if (TURNSTILE_SITEKEY) {
+          try {
+            turnstileToken = await getTurnstileToken('search')
+          } catch {
+            setError(t(lang, 'contactCaptchaNeeded'))
+            return
+          }
+          if (!turnstileToken) {
+            setError(t(lang, 'contactCaptchaNeeded'))
+            return
+          }
+        }
+        const image_b64 = await fileToImageB64(resolved.file)
+        const gate = turnstileToken ? { 'cf-turnstile-response': turnstileToken } : {}
+        if (mode === 'people') {
+          const [bio, vision] = await Promise.all([
+            searchBiometric({ modality: 'face', image_b64, ...gate }, controller.signal),
+            runVisionSearch({ image_b64, mode: 'people', language: lang, ...gate }, controller.signal),
+          ])
+          const top = bio.top
+          const bioMsg = top?.person_name
+            ? `Match: ${top.person_name} (${Math.round((top.score || 0) * 100)}%)`
+            : 'No face match in knowledge graph'
+          setSearchQuery(vision.query || top?.person_name || '')
+          setMessage([bioMsg, vision.message].filter(Boolean).join(' · '))
+          setSearchHits(vision.results || [])
+          setSearchMeta({
+            ...(vision.meta || {}),
+            mode: 'people',
+            biometric: bio,
+          } as SearchMeta)
+          setNotesCollapseToken((n) => n + 1)
+          if (top) skipFollowUp = true
+          else if (vision.query) {
+            followUpQuery = vision.query
+            followUpMode = 'people'
+          }
+        } else {
+          const vision = await runVisionSearch({
+            image_b64,
+            mode: 'product',
+            language: lang,
+            ...gate,
+          }, controller.signal)
+          setSearchQuery(vision.query || '')
+          setMessage(vision.message)
+          setSearchHits(vision.results || [])
+          setSearchMeta(vision.meta || {})
+          setNotesCollapseToken((n) => n + 1)
+          if (vision.query) {
+            followUpQuery = vision.query
+            followUpMode = 'product'
+          }
+        }
+      } catch (exc) {
+        if (controller.signal.aborted || (exc instanceof DOMException && exc.name === 'AbortError')) {
+          setError(t(lang, 'cancelled'))
+        } else {
+          setError(formatApiError(exc))
+        }
+      } finally {
+        window.clearInterval(hintTimer)
+        clearRunAbort()
+        setBusy(false)
+      }
+      if (!skipFollowUp && followUpQuery) {
+        await doSearch({ query: followUpQuery, mode: followUpMode })
+      }
       return
     }
     setError(t(lang, 'searchNoCode'))
