@@ -110,6 +110,10 @@ function looksTechnical(message: string): boolean {
     msg.includes('tesseract') ||
     msg.includes('not in your path') ||
     msg.includes('filenotfounderror') ||
+    msg.includes('openrouter') ||
+    msg.includes('max_tokens') ||
+    msg.includes('requires more credits') ||
+    msg.includes('requires at least $') ||
     /^\s*\{/.test(message) ||
     /^\s*</.test(message)
   )
