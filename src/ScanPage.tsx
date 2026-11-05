@@ -4,6 +4,7 @@ import { SCAN_BASE } from './config'
 import { FileUpload, formatMaxBytes, validateFilesLocally } from './FileUpload'
 import { ToolGlyph } from './icons'
 import { t, type Lang } from './i18n'
+import { MdIcon } from './MdIcon'
 
 type Verdict = {
   ok?: boolean
@@ -281,7 +282,8 @@ export function ScanPage({
           <p className="field-hint">{t(lang, 'uploadMaxHint')}: {formatMaxBytes(VIRUS_MAX_BYTES)}</p>
           <div className="dropzone-actions">
             <button type="button" className="btn-secondary" onClick={() => inputRef.current?.click()}>
-              {t(lang, 'browse')}
+              <MdIcon name="folder_open" />
+              <span>{t(lang, 'browse')}</span>
             </button>
             <p className="dropzone-files">{fileName || t(lang, 'files')}</p>
           </div>
@@ -302,7 +304,8 @@ export function ScanPage({
         </div>
       )}
       <button type="submit" className="btn-primary" disabled={busy} style={{ background: accent }}>
-        {busy ? t(lang, 'working') : t(lang, 'run')}
+        <MdIcon name={busy ? 'hourglass_top' : 'play_arrow'} />
+        <span>{busy ? t(lang, 'working') : t(lang, 'run')}</span>
       </button>
       {error ? <p className="error">{error}</p> : null}
       {verdict ? (

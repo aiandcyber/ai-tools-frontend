@@ -3,6 +3,36 @@ import { formatApiError, submitFeedback } from './api'
 import { TURNSTILE_SITEKEY } from './config'
 import { CategoryIcon } from './icons'
 import { t, type Lang } from './i18n'
+import { SiteFooter } from './SiteFooter'
+
+const OFFICES = [
+  {
+    id: 'hk',
+    titleKey: 'officeHongKong',
+    lines: [
+      '1112, Wing On Plaza, 62 Mody Road, Tsim Sha Tsui East, Kowloon, Hong Kong.',
+    ],
+    email: true,
+  },
+  {
+    id: 'usa',
+    titleKey: 'officeUsa',
+    lines: [
+      '58th Street North, Stillwater, Minnesota - 55082, USA.',
+    ],
+    email: true,
+    whatsapp: '+1 715 5231188',
+  },
+  {
+    id: 'india',
+    titleKey: 'officeIndia',
+    lines: [
+      'Karungal - 629157, Kanyakumari District, Tamil Nadu, India.',
+    ],
+    email: true,
+    whatsapp: '+91-9486067764',
+  },
+] as const
 
 const TOPICS = ['new_tool', 'youtube', 'error', 'feedback', 'contact'] as const
 type Topic = (typeof TOPICS)[number]
@@ -45,16 +75,27 @@ function loadTurnstile(): Promise<TurnstileApi> {
   })
 }
 
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 21s7-5.4 7-11a7 7 0 1 0-14 0c0 5.6 7 11 7 11z" />
+      <circle cx="12" cy="10" r="2.4" />
+    </svg>
+  )
+}
+
 export function ContactPage({
   lang,
   initialYoutubeUrl = '',
   initialTopic = 'new_tool',
   signedInEmail = '',
+  onPrivacy,
 }: {
   lang: Lang
   initialYoutubeUrl?: string
   initialTopic?: string
   signedInEmail?: string
+  onPrivacy: () => void
 }) {
   const lockedEmail = signedInEmail.trim()
   const [topic, setTopic] = useState<Topic>(topicFrom(initialTopic))
@@ -140,69 +181,101 @@ export function ContactPage({
   const showLink = topic === 'youtube' || topic === 'error'
 
   return (
-    <form className="tool-form contact-form need-tool-form" onSubmit={onSubmit}>
-      <div className="tool-hero">
-        <span className="tool-glyph" style={{ background: '#ffedd5', color: '#b45309' }}>
-          <CategoryIcon id="help" />
-        </span>
-        <div>
-          <h2>{t(lang, 'contactTitle')}</h2>
-          <p>{t(lang, 'contactLead')}</p>
-          <p>{t(lang, 'contactLead2')}</p>
+    <div className="contact-page">
+      <form className="tool-form contact-form need-tool-form" onSubmit={onSubmit}>
+        <div className="tool-hero">
+          <span className="tool-glyph" style={{ background: '#ffedd5', color: '#b45309' }}>
+            <CategoryIcon id="help" />
+          </span>
+          <div>
+            <h2>{t(lang, 'contactTitle')}</h2>
+            <p>{t(lang, 'contactLead')}</p>
+            <p>{t(lang, 'contactLead2')}</p>
+          </div>
         </div>
-      </div>
-      <div className="contact-row">
+        <div className="contact-row">
+          <label>
+            {t(lang, 'contactTopic')}
+            <select value={topic} onChange={(event) => setTopic(topicFrom(event.target.value))}>
+              <option value="new_tool">{t(lang, 'topicNewTool')}</option>
+              <option value="youtube">{t(lang, 'topicYoutube')}</option>
+              <option value="error">{t(lang, 'topicError')}</option>
+              <option value="feedback">{t(lang, 'topicFeedback')}</option>
+              <option value="contact">{t(lang, 'topicContact')}</option>
+            </select>
+          </label>
+          <label>
+            {t(lang, 'contactEmail')}
+            <input
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              readOnly={Boolean(lockedEmail)}
+              onChange={lockedEmail ? undefined : (event) => setEmail(event.target.value)}
+            />
+          </label>
+        </div>
+        {showLink && (
+          <label>
+            {t(lang, 'contactYoutube')}
+            <input
+              type="url"
+              required={topic === 'youtube'}
+              placeholder="https://www.youtube.com/watch?v=…"
+              value={youtubeUrl}
+              onChange={(event) => setYoutubeUrl(event.target.value)}
+            />
+          </label>
+        )}
         <label>
-          {t(lang, 'contactTopic')}
-          <select value={topic} onChange={(event) => setTopic(topicFrom(event.target.value))}>
-            <option value="new_tool">{t(lang, 'topicNewTool')}</option>
-            <option value="youtube">{t(lang, 'topicYoutube')}</option>
-            <option value="error">{t(lang, 'topicError')}</option>
-            <option value="feedback">{t(lang, 'topicFeedback')}</option>
-            <option value="contact">{t(lang, 'topicContact')}</option>
-          </select>
-        </label>
-        <label>
-          {t(lang, 'contactEmail')}
-          <input
-            type="email"
+          {t(lang, 'contactMessage')}
+          <textarea
             required
-            autoComplete="email"
-            value={email}
-            readOnly={Boolean(lockedEmail)}
-            onChange={lockedEmail ? undefined : (event) => setEmail(event.target.value)}
+            rows={3}
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
           />
         </label>
-      </div>
-      {showLink && (
-        <label>
-          {t(lang, 'contactYoutube')}
-          <input
-            type="url"
-            required={topic === 'youtube'}
-            placeholder="https://www.youtube.com/watch?v=…"
-            value={youtubeUrl}
-            onChange={(event) => setYoutubeUrl(event.target.value)}
-          />
-        </label>
-      )}
-      <label>
-        {t(lang, 'contactMessage')}
-        <textarea
-          required
-          rows={3}
-          value={message}
-          onChange={(event) => setMessage(event.target.value)}
-        />
-      </label>
-      <div className="contact-actions">
-        {TURNSTILE_SITEKEY ? <div ref={widgetHost} className="contact-captcha" /> : null}
-        <button type="submit" className="btn-primary" disabled={busy}>
-          {busy ? t(lang, 'working') : t(lang, 'contactSend')}
-        </button>
-      </div>
-      {error && <p className="error">{error}</p>}
-      {ok && <p className="ok">{t(lang, 'contactSent')}</p>}
-    </form>
+        <div className="contact-actions">
+          {TURNSTILE_SITEKEY ? <div ref={widgetHost} className="contact-captcha" /> : null}
+          <button type="submit" className="btn-primary" disabled={busy}>
+            {busy ? t(lang, 'working') : t(lang, 'contactSend')}
+          </button>
+        </div>
+        {error && <p className="error">{error}</p>}
+        {ok && <p className="ok">{t(lang, 'contactSent')}</p>}
+      </form>
+
+      <section className="contact-offices" aria-label={t(lang, 'contactOffices')}>
+        {OFFICES.map((office) => (
+          <article key={office.id} className="contact-office">
+            <span className="contact-office-icon">
+              <PinIcon />
+            </span>
+            <div>
+              <h3>{t(lang, office.titleKey)}</h3>
+              {office.lines.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+              {office.email ? (
+                <p>
+                  <a href="mailto:Contact@ai-forall.org">Contact@ai-forall.org</a>
+                </p>
+              ) : null}
+              {'whatsapp' in office && office.whatsapp ? (
+                <p>
+                  {t(lang, 'officeWhatsApp')}
+                  <br />
+                  {office.whatsapp}
+                </p>
+              ) : null}
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <SiteFooter lang={lang} onPrivacy={onPrivacy} />
+    </div>
   )
 }

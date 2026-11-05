@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { fetchDownloadText, formatApiError, runTool } from './api'
 import { speechLang, t, type Lang } from './i18n'
+import { MdIcon } from './MdIcon'
 import { type NoteStroke } from './notesStore'
 import { useRequireAuth } from './useRequireAuth'
 
@@ -25,8 +26,12 @@ type SpeechSession = {
 type Props = {
   lang: Lang
   accent: string
+  /** Bumps when a search finishes — collapses Notes unless pinned or actively editing. */
+  collapseToken?: number
   onUseAsSearch?: (text: string) => void
 }
+
+const NOTES_PIN_KEY = 'ai-forall-notes-pinned'
 
 type FileHandle = FileSystemFileHandle
 
@@ -92,10 +97,6 @@ function supportsFilePicker(): boolean {
   return typeof window !== 'undefined' && 'showSaveFilePicker' in window && 'showOpenFilePicker' in window
 }
 
-function MdIcon({ name }: { name: string }) {
-  return <span className="material-symbols-outlined md-icon" aria-hidden="true">{name}</span>
-}
-
 function NoteButton({
   icon,
   label,
@@ -147,12 +148,13 @@ function paintCanvas(canvas: HTMLCanvasElement, strokes: NoteStroke[]) {
   }
 }
 
-export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
+export function NotesPanel({ lang, accent, collapseToken = 0, onUseAsSearch }: Props) {
   const ensureAuth = useRequireAuth()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const drawing = useRef(false)
   const current = useRef<NoteStroke | null>(null)
   const fileHandleRef = useRef<FileHandle | null>(null)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
   const [fileLabel, setFileLabel] = useState('')
   const [text, setText] = useState('')
   const [strokes, setStrokes] = useState<NoteStroke[]>([])
@@ -160,12 +162,53 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
   const [busy, setBusy] = useState(false)
   const [recording, setRecording] = useState(false)
   const speechSessionRef = useRef<SpeechSession | null>(null)
+  const [pinned, setPinned] = useState(() => {
+    try {
+      return localStorage.getItem(NOTES_PIN_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem(NOTES_PIN_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     paintCanvas(canvas, strokes)
-  }, [strokes])
+  }, [strokes, open])
+
+  useEffect(() => {
+    if (collapseToken <= 0) return
+    if (pinned) {
+      setOpen(true)
+      return
+    }
+    const active = document.activeElement
+    const editingInside = Boolean(bodyRef.current && active && bodyRef.current.contains(active))
+    if (recording || busy || drawing.current || editingInside) return
+    setOpen(false)
+  }, [collapseToken, pinned, recording, busy])
+
+  function setPinnedPersist(next: boolean) {
+    setPinned(next)
+    try {
+      localStorage.setItem(NOTES_PIN_KEY, next ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+    if (next) setOpen(true)
+  }
+
+  function toggleOpen() {
+    if (pinned) return
+    setOpen((currentOpen) => !currentOpen)
+  }
 
   function pointFromEvent(event: ReactPointerEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current!
@@ -456,54 +499,83 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
     ? <p className="field-hint">{t(lang, 'noteOpenFile')}: {fileLabel}</p>
     : null
 
+  const panelOpen = pinned || open
+
   return (
-    <section className="note-card">
-      <h3>{t(lang, 'notesTitle')}</h3>
-      <p>{t(lang, 'notesDesc')}</p>
-      {fileHint}
-      <div className="note-toolbar">
-        <NoteButton icon="note_add" label={t(lang, 'noteNew')} onClick={onNew} disabled={busy} />
-        <NoteButton icon="folder_open" label={t(lang, 'noteOpen')} onClick={() => void onOpen()} disabled={busy} />
-        <NoteButton icon="save" label={t(lang, 'noteSave')} onClick={() => void onSave()} disabled={busy} />
-        <NoteButton icon="gesture" label={t(lang, 'noteHandwritingToText')} onClick={() => void handwritingToText()} disabled={busy} />
-        <NoteButton icon="search" label={t(lang, 'noteUseAsSearch')} onClick={useAsSearch} disabled={busy} />
-        {!recording ? (
-          <NoteButton
-            icon="mic"
-            label={t(lang, 'voice')}
-            onClick={startRec}
-            disabled={busy}
-            primary
-            accent={accent}
-          />
-        ) : (
-          <NoteButton
-            icon="stop"
-            label={t(lang, 'stop')}
-            onClick={stopRec}
-            listening
-          />
-        )}
+    <section className={`note-card${panelOpen ? ' is-open' : ' is-collapsed'}${pinned ? ' is-pinned' : ''}`}>
+      <div className="note-card-bar">
+        <button
+          type="button"
+          className="note-toggle"
+          onClick={toggleOpen}
+          aria-expanded={panelOpen}
+          aria-controls="notes-panel-body"
+          disabled={pinned}
+          title={pinned ? t(lang, 'notesUnpinToCollapse') : (panelOpen ? t(lang, 'notesCollapse') : t(lang, 'notesExpand'))}
+        >
+          <MdIcon name={panelOpen ? 'expand_less' : 'expand_more'} />
+          <span className="note-toggle-title">{t(lang, 'notesTitle')}</span>
+        </button>
+        <button
+          type="button"
+          className={`note-pin-btn${pinned ? ' active' : ''}`}
+          onClick={() => setPinnedPersist(!pinned)}
+          aria-pressed={pinned}
+          title={pinned ? t(lang, 'notesUnpin') : t(lang, 'notesPin')}
+        >
+          <MdIcon name="push_pin" />
+          <span>{pinned ? t(lang, 'notesUnpin') : t(lang, 'notesPin')}</span>
+        </button>
       </div>
-      {status ? <p className="field-hint note-status" style={{ color: accent }} role="status">{status}</p> : null}
-      <canvas
-        ref={canvasRef}
-        className="note-canvas"
-        width={900}
-        height={320}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
-      />
-      <textarea
-        className="note-text"
-        rows={7}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder={t(lang, 'noteTextPlaceholder')}
-      />
-      <p className="field-hint">{t(lang, 'noteKeepOpenHint')}</p>
+      {panelOpen ? (
+        <div id="notes-panel-body" className="note-card-body" ref={bodyRef}>
+          <p>{t(lang, 'notesDesc')}</p>
+          {fileHint}
+          <div className="note-toolbar">
+            <NoteButton icon="note_add" label={t(lang, 'noteNew')} onClick={onNew} disabled={busy} />
+            <NoteButton icon="folder_open" label={t(lang, 'noteOpen')} onClick={() => void onOpen()} disabled={busy} />
+            <NoteButton icon="save" label={t(lang, 'noteSave')} onClick={() => void onSave()} disabled={busy} />
+            <NoteButton icon="gesture" label={t(lang, 'noteHandwritingToText')} onClick={() => void handwritingToText()} disabled={busy} />
+            <NoteButton icon="search" label={t(lang, 'noteUseAsSearch')} onClick={useAsSearch} disabled={busy} />
+            {!recording ? (
+              <NoteButton
+                icon="mic"
+                label={t(lang, 'voice')}
+                onClick={startRec}
+                disabled={busy}
+                primary
+                accent={accent}
+              />
+            ) : (
+              <NoteButton
+                icon="stop"
+                label={t(lang, 'stop')}
+                onClick={stopRec}
+                listening
+              />
+            )}
+          </div>
+          {status ? <p className="field-hint note-status" style={{ color: accent }} role="status">{status}</p> : null}
+          <canvas
+            ref={canvasRef}
+            className="note-canvas"
+            width={960}
+            height={440}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerLeave={onPointerUp}
+          />
+          <textarea
+            className="note-text"
+            rows={11}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={t(lang, 'noteTextPlaceholder')}
+          />
+          <p className="field-hint">{t(lang, 'noteKeepOpenHint')}</p>
+        </div>
+      ) : null}
     </section>
   )
 }

@@ -305,6 +305,7 @@ export async function runSearch(body: {
   product_props?: Record<string, string>
   age_group?: string
   diet?: string
+  'cf-turnstile-response'?: string
 }, signal?: AbortSignal): Promise<{ message: string; results: SearchHit[]; meta: SearchMeta }> {
   const response = await apiFetch(apiUrl('/api/search'), {
     method: 'POST',

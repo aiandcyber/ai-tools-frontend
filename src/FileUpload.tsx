@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiUrl } from './config'
 import { t, type Lang } from './i18n'
+import { MdIcon } from './MdIcon'
 
 export type UploadStatusStage = '' | 'type' | 'size' | 'scan' | 'ready' | 'error'
 
@@ -247,11 +248,13 @@ export function FileUpload({
       <p className="field-hint">{t(lang, 'uploadMaxHint')}: {formatMaxBytes(maxBytes)}</p>
       <div className="dropzone-actions">
         <button type="button" className="btn-secondary" onClick={() => inputRef.current?.click()}>
-          {browseLabel}
+          <MdIcon name="folder_open" />
+          <span>{browseLabel}</span>
         </button>
         {cameraLabel && onCameraClick ? (
           <button type="button" className="btn-secondary" onClick={onCameraClick}>
-            {cameraLabel}
+            <MdIcon name="photo_camera" />
+            <span>{cameraLabel}</span>
           </button>
         ) : null}
         <p className="dropzone-files">{names || emptyLabel}</p>

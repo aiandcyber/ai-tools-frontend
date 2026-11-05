@@ -22,14 +22,18 @@ import {
 } from './api'
 import { useOptionalAuth } from './auth'
 import { ContactPage } from './ContactPage'
+import { PrivacyPage } from './PrivacyPage'
 import { ScanPage, safetyTools } from './ScanPage'
-import { apiUrl, portalUrl } from './config'
+import { apiUrl } from './config'
 import { useRequireAuth } from './useRequireAuth'
 import { CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type NavCategoryId } from './icons'
 import { LANGS, languageOptionLabel, speechLang, t, type Lang } from './i18n'
 import { SearchCapture, hitFromCode, type CaptureHit } from './SearchCapture'
 import { FileUpload } from './FileUpload'
 import { NotesPanel } from './NotesPanel'
+import { MdIcon } from './MdIcon'
+import { getTurnstileToken } from './turnstile'
+import { TURNSTILE_SITEKEY } from './config'
 import { openRememberedOutput, readOutputMeta, saveOutputAndRemember } from './outputMemory'
 
 type Rec = {
@@ -336,16 +340,18 @@ export function App() {
   const [lang, setLang] = useState<Lang>(browserLang)
   const [tools, setTools] = useState<Tool[]>([])
   const [category, setCategory] = useState<NavCategoryId>(() => (
-    window.location.pathname === '/contact' ? 'help'
+    window.location.pathname === '/contact' || window.location.pathname === '/privacy' ? 'help'
       : window.location.pathname === '/safety' ? 'safety'
         : 'ai'
   ))
+  const [showPrivacy, setShowPrivacy] = useState(() => window.location.pathname === '/privacy')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Tool | null>(null)
   const [message, setMessage] = useState('')
   const [downloads, setDownloads] = useState<Download[]>([])
   const [searchHits, setSearchHits] = useState<SearchHit[]>([])
   const [searchMeta, setSearchMeta] = useState<SearchMeta>({})
+  const [notesCollapseToken, setNotesCollapseToken] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [chat, setChat] = useState<{ role: 'user' | 'assistant'; text: string; notice?: boolean }[]>([])
@@ -382,6 +388,8 @@ export function App() {
     return Number.isFinite(saved) ? Math.min(720, Math.max(300, saved)) : 420
   })
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const assistantFilesRef = useRef<HTMLInputElement | null>(null)
+  const [assistantFileCount, setAssistantFileCount] = useState(0)
   const chatAbortRef = useRef<AbortController | null>(null)
   const runAbortRef = useRef<{ controller: AbortController; jobId: string } | null>(null)
   const speakStreamRef = useRef<ReturnType<typeof createSpeakStream> | null>(null)
@@ -411,6 +419,12 @@ export function App() {
 
   useEffect(() => {
     const onPop = () => {
+      if (window.location.pathname === '/privacy') {
+        setShowPrivacy(true)
+        setCategory('help')
+        setSelected(null)
+        return
+      }
       if (window.location.pathname === '/contact') {
         const params = new URLSearchParams(window.location.search)
         const url = params.get('url') || ''
@@ -418,19 +432,30 @@ export function App() {
           url,
           topic: params.get('topic') || (url ? 'youtube' : 'new_tool'),
         })
+        setShowPrivacy(false)
         setCategory('help')
         setSelected(null)
         return
       }
       if (window.location.pathname === '/safety') {
+        setShowPrivacy(false)
         setCategory('safety')
         return
       }
+      setShowPrivacy(false)
       setCategory((current) => (current === 'help' || current === 'safety' ? 'ai' : current))
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
+
+  function openPrivacy() {
+    window.history.pushState({}, '', '/privacy')
+    setShowPrivacy(true)
+    setCategory('help')
+    setSelected(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   function openContact(youtubeUrl = '') {
     const params = new URLSearchParams()
@@ -438,6 +463,7 @@ export function App() {
     if (youtubeUrl) params.set('url', youtubeUrl)
     window.history.pushState({}, '', `/contact?${params}`)
     setContactPrefill({ url: youtubeUrl, topic: 'youtube' })
+    setShowPrivacy(false)
     setCategory('help')
     setSelected(null)
   }
@@ -572,15 +598,22 @@ export function App() {
     if (id === 'help') {
       window.history.pushState({}, '', '/contact')
       setContactPrefill({ url: '', topic: 'new_tool' })
+      setShowPrivacy(false)
       setSelected(null)
       return
     }
     if (id === 'safety') {
       window.history.pushState({}, '', '/safety')
+      setShowPrivacy(false)
       setSelected(scanTools[0] ?? null)
       return
     }
-    if (window.location.pathname === '/contact' || window.location.pathname === '/safety') {
+    setShowPrivacy(false)
+    if (
+      window.location.pathname === '/contact'
+      || window.location.pathname === '/safety'
+      || window.location.pathname === '/privacy'
+    ) {
       window.history.pushState({}, '', '/')
     }
     if (id === 'ai') {
@@ -697,6 +730,19 @@ export function App() {
     setBusy(true)
     setError('')
     try {
+      let turnstileToken = ''
+      if (TURNSTILE_SITEKEY) {
+        try {
+          turnstileToken = await getTurnstileToken('search')
+        } catch {
+          setError(t(lang, 'contactCaptchaNeeded'))
+          return
+        }
+        if (!turnstileToken) {
+          setError(t(lang, 'contactCaptchaNeeded'))
+          return
+        }
+      }
       const typed = regionCustom.trim()
       const result = await runSearch({
         query,
@@ -707,10 +753,12 @@ export function App() {
         barcode,
         confirm_add: opts?.confirm_add,
         product_props: opts?.product_props,
+        ...(turnstileToken ? { 'cf-turnstile-response': turnstileToken } : {}),
       }, controller.signal)
       setMessage(result.message)
       setSearchHits(result.results || [])
       setSearchMeta(result.meta || {})
+      setNotesCollapseToken((n) => n + 1)
     } catch (exc) {
       if (controller.signal.aborted || (exc instanceof DOMException && exc.name === 'AbortError')) {
         setError(t(lang, 'cancelled'))
@@ -889,6 +937,8 @@ export function App() {
     } finally {
       if (chatAbortRef.current === controller) chatAbortRef.current = null
       setBusy(false)
+      if (assistantFilesRef.current) assistantFilesRef.current.value = ''
+      setAssistantFileCount(0)
     }
   }
 
@@ -1093,16 +1143,53 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <a className="brand" href={portalUrl()}>
-          <img className="brand-logo" src="/favicon.svg" alt="" width="36" height="36" />
-          <span>
-            <strong>{t(lang, 'portal')}</strong>
-            <small>{t(lang, 'brand')}</small>
-          </span>
-        </a>
-        <h1 className="site-headline">{t(lang, 'headline')}</h1>
+        <nav className="top-nav" role="tablist" aria-label="Tool categories">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={category === 'ai'}
+            className={`category-card home-card${category === 'ai' ? ' on' : ''}`}
+            style={{
+              ['--accent' as string]: CATEGORY_META.ai.accent,
+              ['--soft' as string]: CATEGORY_META.ai.soft,
+            }}
+            onClick={() => pickCategory('ai')}
+          >
+            <span className="category-icon">
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M4 11.5 12 4l8 7.5" />
+                <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M7 10.5V19h10v-8.5" />
+              </svg>
+            </span>
+            <span className="category-label">{t(lang, 'home')}</span>
+          </button>
+          {NAV_CATEGORIES.map((id) => {
+            const meta = CATEGORY_META[id]
+            const active = id === category
+            const label = categoryLabel(id)
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={`category-card${active ? ' on' : ''}`}
+                style={{
+                  ['--accent' as string]: meta.accent,
+                  ['--soft' as string]: meta.soft,
+                }}
+                onClick={() => pickCategory(id)}
+              >
+                <span className={`category-icon${id === 'media' ? ' youtube' : ''}`}>
+                  <CategoryIcon id={id} />
+                </span>
+                <span className="category-label">{label}</span>
+              </button>
+            )
+          })}
+        </nav>
         <div className="top-actions">
-          <label className="field-inline">
+          <label className="field-inline topbar-lang">
             {t(lang, 'language')}
             <select value={lang} onChange={(event) => setLang(event.target.value as Lang)}>
               {LANGS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
@@ -1119,35 +1206,6 @@ export function App() {
           )}
         </div>
       </header>
-
-      <section className="category-band">
-        <div className="category-grid" role="tablist" aria-label="Tool categories">
-          {NAV_CATEGORIES.map((id) => {
-            const meta = CATEGORY_META[id]
-            const active = id === category
-            const label = categoryLabel(id)
-            return (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                className={`category-card ${active ? 'on' : ''} ${id === 'ai' ? 'home-card' : ''}`}
-                style={{
-                  ['--accent' as string]: meta.accent,
-                  ['--soft' as string]: meta.soft,
-                }}
-                onClick={() => pickCategory(id)}
-              >
-                <span className={`category-icon${id === 'media' ? ' youtube' : ''}`}>
-                  <CategoryIcon id={id} />
-                </span>
-                <span className="category-label">{label}</span>
-              </button>
-            )
-          })}
-        </div>
-      </section>
 
       <div className={`workspace${category === 'help' ? ' need-tool' : ''}${category === 'ai' ? ' ai-home' : ''}`} style={{ ['--assistant-width' as string]: `${assistantWidth}px` }}>
         {category !== 'help' && category !== 'ai' && (
@@ -1171,12 +1229,17 @@ export function App() {
                     onClick={() => {
                       setSelected(tool)
                       if (tool.category === 'search') setCategory('ai')
-                      else if (NAV_CATEGORIES.includes(tool.category as NavCategoryId)) {
+                      else if ((NAV_CATEGORIES as readonly string[]).includes(tool.category)) {
                         setCategory(tool.category as NavCategoryId)
                         if (tool.category === 'safety') window.history.pushState({}, '', '/safety')
-                        else if (window.location.pathname === '/safety' || window.location.pathname === '/contact') {
+                        else if (
+                          window.location.pathname === '/safety'
+                          || window.location.pathname === '/contact'
+                          || window.location.pathname === '/privacy'
+                        ) {
                           window.history.pushState({}, '', '/')
                         }
+                        setShowPrivacy(false)
                       }
                       setMessage('')
                       setError('')
@@ -1240,12 +1303,24 @@ export function App() {
               accent={accent.accent}
             />
           )}
-          {category === 'help' && (
+          {category === 'help' && showPrivacy && (
+            <PrivacyPage
+              lang={lang}
+              onContact={() => {
+                window.history.pushState({}, '', '/contact')
+                setContactPrefill({ url: '', topic: 'contact' })
+                setShowPrivacy(false)
+              }}
+              onPrivacy={openPrivacy}
+            />
+          )}
+          {category === 'help' && !showPrivacy && (
             <ContactPage
               lang={lang}
               initialYoutubeUrl={contactPrefill.url}
               initialTopic={contactPrefill.topic}
               signedInEmail={auth.isAuthenticated ? auth.email : ''}
+              onPrivacy={openPrivacy}
             />
           )}
           {category !== 'help' && category !== 'safety' && category !== 'ai' && !selected && <p className="empty">{t(lang, 'empty')}</p>}
@@ -1409,45 +1484,46 @@ export function App() {
                 <input type="hidden" name="language" value={lang} />
               </div>
               {error && <p className="error">{error}</p>}
-              {message ? (
-                <div className={`search-rec${searchMeta.report_unidentified ? ' unsure' : ''}${searchMeta.mode === 'product' ? ` ${productRecClass(searchMeta.buy_recommendation)}` : ''}`}>
-                  <p>{message}</p>
-                  {searchMeta.mode === 'product' ? (
-                    <ProductCard
-                      lang={lang}
-                      meta={searchMeta}
-                      busy={busy}
-                      onSave={(props) => void doSearch({ confirm_add: true, product_props: props })}
-                    />
-                  ) : (
-                    <SearchFacts node={searchMeta.knowledge} />
-                  )}
-                </div>
-              ) : null}
-              {searchMeta.mode === 'product' ? null : (
-                <SearchResults items={searchHits} heading={t(lang, 'webResults')} />
-              )}
+              <div className="search-outcome">
+                {message ? (
+                  <div className={`search-rec${searchMeta.report_unidentified ? ' unsure' : ''}${searchMeta.mode === 'product' ? ` ${productRecClass(searchMeta.buy_recommendation)}` : ''}`}>
+                    <p>{message}</p>
+                    {searchMeta.mode === 'product' ? (
+                      <ProductCard
+                        lang={lang}
+                        meta={searchMeta}
+                        busy={busy}
+                        onSave={(props) => void doSearch({ confirm_add: true, product_props: props })}
+                      />
+                    ) : (
+                      <SearchFacts node={searchMeta.knowledge} />
+                    )}
+                  </div>
+                ) : null}
+                {searchMeta.mode === 'product' ? null : (
+                  <SearchResults items={searchHits} heading={t(lang, 'webResults')} />
+                )}
+              </div>
+              <NotesPanel
+                lang={lang}
+                accent={accent.accent}
+                collapseToken={notesCollapseToken}
+                onUseAsSearch={(value) => {
+                  const query = value.replace(/\s+/g, ' ').trim()
+                  const mode = (searchKind === 'people' || searchKind === 'topic' || searchKind === 'product')
+                    ? searchKind
+                    : 'topic'
+                  if (!searchKind) setSearchKind('topic')
+                  setSearchQuery(query)
+                  setError('')
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                  requestAnimationFrame(() => {
+                    document.querySelector<HTMLInputElement>('input[name="query"]')?.focus()
+                  })
+                  void doSearch({ query, mode })
+                }}
+              />
             </form>
-          )}
-          {category === 'ai' && (
-            <NotesPanel
-              lang={lang}
-              accent={accent.accent}
-              onUseAsSearch={(value) => {
-                const query = value.replace(/\s+/g, ' ').trim()
-                const mode = (searchKind === 'people' || searchKind === 'topic' || searchKind === 'product')
-                  ? searchKind
-                  : 'topic'
-                if (!searchKind) setSearchKind('topic')
-                setSearchQuery(query)
-                setError('')
-                window.scrollTo({ top: 0, behavior: 'smooth' })
-                requestAnimationFrame(() => {
-                  document.querySelector<HTMLInputElement>('input[name="query"]')?.focus()
-                })
-                void doSearch({ query, mode })
-              }}
-            />
           )}
           {category !== 'help' && category !== 'safety' && category !== 'ai' && selected && selected.id === 'translate' && (
             <form key={selected.id} className="tool-form translate-form" onSubmit={onRun}>
@@ -1627,7 +1703,8 @@ export function App() {
                 </>
               ) : (
                 <button type="submit" className="btn-primary" style={{ background: accent.accent }}>
-                  {t(lang, 'run')}
+                  <MdIcon name="play_arrow" />
+                  <span>{t(lang, 'run')}</span>
                 </button>
               )}
               {error && <p className="error">{error}</p>}
@@ -1677,7 +1754,8 @@ export function App() {
                 </>
               ) : (
                 <button type="submit" className="btn-primary" style={{ background: accent.accent }}>
-                  {t(lang, 'run')}
+                  <MdIcon name="play_arrow" />
+                  <span>{t(lang, 'run')}</span>
                 </button>
               )}
               {error && <p className="error">{error}</p>}
@@ -1766,7 +1844,8 @@ export function App() {
                 </>
               ) : (
                 <button type="submit" className="btn-primary" style={{ background: accent.accent }}>
-                  {t(lang, 'run')}
+                  <MdIcon name="play_arrow" />
+                  <span>{t(lang, 'run')}</span>
                 </button>
               )}
               {error && <p className="error">{error}</p>}
@@ -1789,10 +1868,28 @@ export function App() {
 
         <aside className="assistant">
           <div className="assistant-head">
-            <h2>{t(lang, 'assistant')}</h2>
-            <label className="check">
-              <input type="checkbox" checked={speakReplies} onChange={(event) => setSpeakReplies(event.target.checked)} />
-              {t(lang, 'speak')}
+            <div className="assistant-title">
+              <span className="assistant-avatar" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22">
+                  <rect x="5" y="8" width="14" height="11" rx="3.5" fill="none" stroke="currentColor" strokeWidth="1.7" />
+                  <circle cx="9.2" cy="13" r="1.35" fill="currentColor" />
+                  <circle cx="14.8" cy="13" r="1.35" fill="currentColor" />
+                  <path fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" d="M10 16.2h4" />
+                  <path fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" d="M12 4.2v2.4M8.2 5.6l1.2 1.5M15.8 5.6l-1.2 1.5" />
+                </svg>
+              </span>
+              <div className="assistant-title-copy">
+                <p className="assistant-kicker">{t(lang, 'assistantKicker')}</p>
+                <h2>{t(lang, 'assistant')}</h2>
+              </div>
+            </div>
+            <label className="assistant-speak">
+              <span>{t(lang, 'speak')}</span>
+              <input
+                type="checkbox"
+                checked={speakReplies}
+                onChange={(event) => setSpeakReplies(event.target.checked)}
+              />
             </label>
           </div>
           <div className="thread" ref={threadRef}>
@@ -1805,22 +1902,60 @@ export function App() {
             ) : null}
           </div>
           <form className="assistant-form" onSubmit={onChat}>
-            <textarea name="draft" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t(lang, 'placeholder')} rows={3} />
-            <input name="files" type="file" multiple />
-            <div className="row">
+            <textarea
+              name="draft"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={t(lang, 'placeholder')}
+              rows={2}
+            />
+            <input
+              ref={assistantFilesRef}
+              className="assistant-files-input"
+              name="files"
+              type="file"
+              multiple
+              onChange={(event) => setAssistantFileCount(event.currentTarget.files?.length || 0)}
+            />
+            {assistantFileCount > 0 ? (
+              <p className="assistant-files-hint">{assistantFileCount} file{assistantFileCount === 1 ? '' : 's'} attached</p>
+            ) : null}
+            <div className="assistant-composer-actions">
               <button
                 type="button"
-                className={`btn-secondary${listeningFor === 'assistant' ? ' listening' : ''}`}
+                className="assistant-icon-btn"
+                aria-label={t(lang, 'upload')}
+                title={t(lang, 'upload')}
+                onClick={() => assistantFilesRef.current?.click()}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                  <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className={`assistant-icon-btn${listeningFor === 'assistant' ? ' listening' : ''}`}
+                aria-label={listeningFor === 'assistant' ? t(lang, 'listening') : t(lang, 'voice')}
+                title={listeningFor === 'assistant' ? t(lang, 'listening') : t(lang, 'voice')}
                 onClick={onVoice}
               >
-                {listeningFor === 'assistant' ? t(lang, 'listening') : t(lang, 'voice')}
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                  <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" />
+                  <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+                </svg>
               </button>
-              <div className="row" style={{ gap: '0.45rem', marginLeft: 'auto' }}>
-                {(busy || speaking) ? (
-                  <button type="button" className="btn-stop" onClick={onStopAssistant}>{t(lang, 'stop')}</button>
-                ) : null}
-                <button type="submit" className="btn-primary" disabled={busy}>{t(lang, 'send')}</button>
-              </div>
+              <div className="assistant-composer-spacer" />
+              {(busy || speaking) ? (
+                <button type="button" className="assistant-stop-btn" onClick={onStopAssistant}>
+                  {t(lang, 'stop')}
+                </button>
+              ) : (
+                <button type="submit" className="assistant-send-btn" disabled={busy || !draft.trim()} aria-label={t(lang, 'send')} title={t(lang, 'send')}>
+                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                    <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M6 11l6-6 6 6" />
+                  </svg>
+                </button>
+              )}
             </div>
           </form>
         </aside>
@@ -2000,7 +2135,8 @@ function YoutubeToolForm({
         </>
       ) : (
         <button type="submit" className="btn-primary" style={{ background: accent }}>
-          {runLabel}
+          <MdIcon name="play_arrow" />
+          <span>{runLabel}</span>
         </button>
       )}
       {(error || probeError) && (

@@ -4,7 +4,8 @@ React + Vite UI for **AI-for All Tools**.
 
 - **GitHub:** https://github.com/aiandcyber/ai-tools-frontend  
 - **Production host (planned):** Cloudflare Pages → `tools.ai-forall.org`  
-- **Backend API:** set `VITE_API_BASE` to the Fargate (or other) API origin  
+- **Backend API:** set `VITE_API_BASE` to the public API origin (e.g. `https://api.tools.ai-forall.org`)  
+
 
 ## Local development
 
@@ -43,8 +44,13 @@ Connect [ai-tools-frontend](https://github.com/aiandcyber/ai-tools-frontend) in 
 | `VITE_AUTH0_CLIENT_ID` | Tools SPA Client ID |
 | `VITE_AUTH0_AUDIENCE` | `https://api.ai-forall.org` |
 | `VITE_AUTH_REQUIRED` | `true` |
+| `VITE_TURNSTILE_SITEKEY` | Cloudflare Turnstile sitekey (search + contact) |
 
 Also add production Callback / Logout / Web Origins on the Auth0 SPA: `https://tools.ai-forall.org`.
+
+### Search (casual users)
+
+Anonymous Search does **not** require Sign in. The SPA gets an invisible Turnstile token (action `search`) and sends it as `cf-turnstile-response` on `POST /api/search`. The API also rate-limits by IP. Signed-in users (Auth0 Bearer) skip the casual Turnstile path.
 
 `wrangler.jsonc` sets `assets.not_found_handling` to `single-page-application`, so unknown paths serve `index.html`. Do not add a `/* /index.html 200` rule in `_redirects`; Workers rejects it as a loop.
 

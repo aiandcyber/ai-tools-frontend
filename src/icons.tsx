@@ -1,10 +1,11 @@
 export const CATEGORIES = ['search', 'pdf', 'image', 'media', 'utility', 'ai'] as const
 
-/** Top category tabs — AI is home (shows search). No separate Search tab. */
-export const NAV_CATEGORIES = ['ai', 'media', 'safety', 'pdf', 'image', 'utility', 'help'] as const
+/** Top category tabs — Search/home is a separate Home control, not listed here. */
+export const NAV_CATEGORIES = ['media', 'safety', 'pdf', 'image', 'utility', 'help'] as const
 
 export type CategoryId = (typeof CATEGORIES)[number]
-export type NavCategoryId = (typeof NAV_CATEGORIES)[number]
+/** Includes `ai` for the Home/search page even though Home is not in NAV_CATEGORIES. */
+export type NavCategoryId = (typeof NAV_CATEGORIES)[number] | 'ai'
 
 export const CATEGORY_META: Record<CategoryId | 'help' | 'safety', { accent: string; soft: string }> = {
   search: { accent: '#0e7490', soft: '#cffafe' },
