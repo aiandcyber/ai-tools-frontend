@@ -107,6 +107,9 @@ function looksTechnical(message: string): boolean {
     msg.includes('bad gateway') ||
     msg.includes('not running') ||
     msg.includes('api not') ||
+    msg.includes('tesseract') ||
+    msg.includes('not in your path') ||
+    msg.includes('filenotfounderror') ||
     /^\s*\{/.test(message) ||
     /^\s*</.test(message)
   )
@@ -369,6 +372,16 @@ export async function runTool(
     meta: payload.meta || {},
     job_id: payload.job_id || form.get('job_id')?.toString(),
   }
+}
+
+/** Fetch text from a tool download URL (handles API base + auth). */
+export async function fetchDownloadText(url: string): Promise<string> {
+  const response = await apiFetch(apiUrl(url), { headers: await headers() })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({ detail: response.statusText }))
+    throw new Error(userHttpError(response.status, payload.detail, GENERIC_ERROR))
+  }
+  return (await response.text()).trim()
 }
 
 export async function sendChat(

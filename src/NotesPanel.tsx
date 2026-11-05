@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { runTool, transcribeAudio } from './api'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { fetchDownloadText, formatApiError, runTool, transcribeAudio } from './api'
 import { t, type Lang } from './i18n'
 import { type NoteStroke } from './notesStore'
 import { useRequireAuth } from './useRequireAuth'
@@ -24,6 +24,61 @@ function supportsFilePicker(): boolean {
   return typeof window !== 'undefined' && 'showSaveFilePicker' in window && 'showOpenFilePicker' in window
 }
 
+function MdIcon({ name }: { name: string }) {
+  return <span className="material-symbols-outlined md-icon" aria-hidden="true">{name}</span>
+}
+
+function NoteButton({
+  icon,
+  label,
+  onClick,
+  disabled,
+  primary,
+  accent,
+  listening,
+}: {
+  icon: string
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  primary?: boolean
+  accent?: string
+  listening?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      className={`md-text-btn${primary ? ' md-text-btn-primary' : ' btn-secondary'}${listening ? ' listening' : ''}`}
+      style={primary ? { background: accent } : undefined}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      <MdIcon name={icon} />
+      <span>{label}</span>
+    </button>
+  )
+}
+
+function paintCanvas(canvas: HTMLCanvasElement, strokes: NoteStroke[]) {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  ctx.fillStyle = '#fffef8'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  for (const stroke of strokes) {
+    if (stroke.points.length < 2) continue
+    ctx.strokeStyle = stroke.color
+    ctx.lineWidth = stroke.width
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.beginPath()
+    ctx.moveTo(stroke.points[0].x, stroke.points[0].y)
+    for (let i = 1; i < stroke.points.length; i += 1) {
+      ctx.lineTo(stroke.points[i].x, stroke.points[i].y)
+    }
+    ctx.stroke()
+  }
+}
+
 export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
   const ensureAuth = useRequireAuth()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -42,23 +97,7 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.fillStyle = '#fffef8'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    for (const stroke of strokes) {
-      if (stroke.points.length < 2) continue
-      ctx.strokeStyle = stroke.color
-      ctx.lineWidth = stroke.width
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-      ctx.beginPath()
-      ctx.moveTo(stroke.points[0].x, stroke.points[0].y)
-      for (let i = 1; i < stroke.points.length; i += 1) {
-        ctx.lineTo(stroke.points[i].x, stroke.points[i].y)
-      }
-      ctx.stroke()
-    }
+    paintCanvas(canvas, strokes)
   }, [strokes])
 
   function pointFromEvent(event: ReactPointerEvent<HTMLCanvasElement>) {
@@ -98,7 +137,7 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
     setFileLabel('')
     setText('')
     setStrokes([])
-    setStatus(t(lang, 'noteNew'))
+    setStatus(t(lang, 'noteNewReady'))
   }
 
   async function writeToHandle(handle: FileHandle, contents: string) {
@@ -135,7 +174,6 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
           }
         }
       }
-      // Fallback: browser download with default name
       const blob = new Blob([payload], { type: 'text/plain' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -146,7 +184,7 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
       setFileLabel(suggested)
       setStatus(t(lang, 'noteSavedDownload').replace('{name}', suggested))
     } catch (exc) {
-      setStatus(exc instanceof Error ? exc.message : t(lang, 'somethingWrong'))
+      setStatus(formatApiError(exc, t(lang, 'somethingWrong')))
     }
   }
 
@@ -173,46 +211,7 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
         setStatus(t(lang, 'cancelled'))
         return
       }
-      setStatus(exc instanceof Error ? exc.message : t(lang, 'somethingWrong'))
-    }
-  }
-
-  async function runOnText(toolId: 'summarize' | 'translate') {
-    const body = text.trim()
-    if (!body) {
-      setStatus(t(lang, 'noteNeedText'))
-      return
-    }
-    setBusy(true)
-    setStatus(t(lang, 'working'))
-    if (!(await ensureAuth())) {
-      setBusy(false)
-      setStatus(t(lang, 'signIn'))
-      return
-    }
-    try {
-      const form = new FormData()
-      form.set('text', body)
-      if (toolId === 'translate') {
-        form.set('source_language', 'auto')
-        form.set('language', lang === 'yue' ? 'yue' : lang === 'zh' ? 'zh' : 'en')
-      }
-      const result = await runTool(toolId, form)
-      let next = (result.message || '').trim()
-      if (!next && result.downloads?.[0]?.url) {
-        const res = await fetch(result.downloads[0].url)
-        next = (await res.text()).trim()
-      }
-      if (!next) {
-        setStatus(t(lang, 'somethingWrong'))
-        return
-      }
-      setText(next)
-      setStatus(t(lang, toolId === 'summarize' ? 'noteSummarized' : 'noteTranslated'))
-    } catch (exc) {
-      setStatus(exc instanceof Error ? exc.message : t(lang, 'somethingWrong'))
-    } finally {
-      setBusy(false)
+      setStatus(formatApiError(exc, t(lang, 'somethingWrong')))
     }
   }
 
@@ -230,6 +229,7 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
       return
     }
     try {
+      paintCanvas(canvas, strokes)
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
       if (!blob) {
         setStatus(t(lang, 'somethingWrong'))
@@ -240,8 +240,7 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
       const result = await runTool('ocr', form)
       let next = ''
       if (result.downloads?.[0]?.url) {
-        const res = await fetch(result.downloads[0].url)
-        next = (await res.text()).trim()
+        next = await fetchDownloadText(result.downloads[0].url)
       }
       if (!next) next = (result.message || '').trim()
       if (!next || /^ocr complete$/i.test(next)) {
@@ -251,19 +250,23 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
       setText((prev) => (prev.trim() ? `${prev.trim()}\n${next}` : next))
       setStatus(t(lang, 'noteOcrDone'))
     } catch (exc) {
-      setStatus(exc instanceof Error ? exc.message : t(lang, 'somethingWrong'))
+      setStatus(formatApiError(exc, t(lang, 'noteOcrFailed')))
     } finally {
       setBusy(false)
     }
   }
 
   function useAsSearch() {
-    const body = text.trim()
+    const body = text.replace(/\s+/g, ' ').trim()
     if (!body) {
       setStatus(t(lang, 'noteNeedText'))
       return
     }
-    onUseAsSearch?.(body)
+    if (!onUseAsSearch) {
+      setStatus(t(lang, 'somethingWrong'))
+      return
+    }
+    onUseAsSearch(body)
     setStatus(t(lang, 'noteSentToSearch'))
   }
 
@@ -301,7 +304,7 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
       return
     }
     setBusy(true)
-    setStatus(t(lang, 'uploadCheckScan'))
+    setStatus(t(lang, 'noteVoiceWorking'))
     try {
       if (!(await ensureAuth())) {
         setBusy(false)
@@ -312,31 +315,43 @@ export function NotesPanel({ lang, accent, onUseAsSearch }: Props) {
       setText((prev) => (prev ? `${prev}\n${heard}` : heard))
       setStatus(t(lang, 'noteTranscribed'))
     } catch (exc) {
-      setStatus(exc instanceof Error ? exc.message : t(lang, 'voiceFailed'))
+      setStatus(formatApiError(exc, t(lang, 'voiceFailed')))
     } finally {
       setBusy(false)
     }
   }
 
+  const fileHint: ReactNode = fileLabel
+    ? <p className="field-hint">{t(lang, 'noteOpenFile')}: {fileLabel}</p>
+    : null
+
   return (
     <section className="note-card">
       <h3>{t(lang, 'notesTitle')}</h3>
       <p>{t(lang, 'notesDesc')}</p>
-      {fileLabel ? <p className="field-hint">{t(lang, 'noteOpenFile')}: {fileLabel}</p> : null}
+      {fileHint}
       <div className="note-toolbar">
-        <button type="button" className="btn-secondary" onClick={onNew} disabled={busy}>{t(lang, 'noteNew')}</button>
-        <button type="button" className="btn-secondary" onClick={() => void onOpen()} disabled={busy}>{t(lang, 'noteOpen')}</button>
-        <button type="button" className="btn-secondary" onClick={() => void onSave()} disabled={busy}>{t(lang, 'noteSave')}</button>
-        <button type="button" className="btn-secondary" onClick={() => void runOnText('summarize')} disabled={busy}>{t(lang, 'noteSummarize')}</button>
-        <button type="button" className="btn-secondary" onClick={() => void runOnText('translate')} disabled={busy}>{t(lang, 'noteTranslate')}</button>
-        <button type="button" className="btn-secondary" onClick={() => void handwritingToText()} disabled={busy}>{t(lang, 'noteHandwritingToText')}</button>
-        <button type="button" className="btn-secondary" onClick={useAsSearch} disabled={busy}>{t(lang, 'noteUseAsSearch')}</button>
+        <NoteButton icon="note_add" label={t(lang, 'noteNew')} onClick={onNew} disabled={busy} />
+        <NoteButton icon="folder_open" label={t(lang, 'noteOpen')} onClick={() => void onOpen()} disabled={busy} />
+        <NoteButton icon="save" label={t(lang, 'noteSave')} onClick={() => void onSave()} disabled={busy} />
+        <NoteButton icon="gesture" label={t(lang, 'noteHandwritingToText')} onClick={() => void handwritingToText()} disabled={busy} />
+        <NoteButton icon="search" label={t(lang, 'noteUseAsSearch')} onClick={useAsSearch} disabled={busy} />
         {!recording ? (
-          <button type="button" className="btn-primary" style={{ background: accent }} onClick={() => void startRec()} disabled={busy}>
-            {t(lang, 'noteStartListen')}
-          </button>
+          <NoteButton
+            icon="mic"
+            label={t(lang, 'voice')}
+            onClick={() => void startRec()}
+            disabled={busy}
+            primary
+            accent={accent}
+          />
         ) : (
-          <button type="button" className="btn-secondary" onClick={stopRec}>{t(lang, 'noteStopListen')}</button>
+          <NoteButton
+            icon="stop"
+            label={t(lang, 'stop')}
+            onClick={stopRec}
+            listening
+          />
         )}
       </div>
       {status ? <p className="field-hint note-status" style={{ color: accent }} role="status">{status}</p> : null}

@@ -1432,9 +1432,18 @@ export function App() {
               lang={lang}
               accent={accent.accent}
               onUseAsSearch={(value) => {
-                setSearchQuery(value)
+                const query = value.replace(/\s+/g, ' ').trim()
+                const mode = (searchKind === 'people' || searchKind === 'topic' || searchKind === 'product')
+                  ? searchKind
+                  : 'topic'
+                if (!searchKind) setSearchKind('topic')
+                setSearchQuery(query)
                 setError('')
                 window.scrollTo({ top: 0, behavior: 'smooth' })
+                requestAnimationFrame(() => {
+                  document.querySelector<HTMLInputElement>('input[name="query"]')?.focus()
+                })
+                void doSearch({ query, mode })
               }}
             />
           )}
