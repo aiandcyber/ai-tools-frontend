@@ -1558,6 +1558,23 @@ export function App() {
               <div className="search-outcome">
                 {(message || searchHits.length > 0) ? (
                   <div className="search-outcome-bar">
+                    {message ? (
+                      <div className={`search-rec${searchMeta.report_unidentified ? ' unsure' : ''}${searchMeta.mode === 'product' ? ` ${productRecClass(searchMeta.buy_recommendation)}` : ''}`}>
+                        <p>{message}</p>
+                        {searchMeta.mode === 'product' ? (
+                          <ProductCard
+                            lang={lang}
+                            meta={searchMeta}
+                            busy={busy}
+                            onSave={(props) => void doSearch({ confirm_add: true, product_props: props })}
+                          />
+                        ) : (
+                          <SearchFacts node={searchMeta.knowledge} />
+                        )}
+                      </div>
+                    ) : (
+                      <span className="search-outcome-spacer" aria-hidden="true" />
+                    )}
                     <button
                       type="button"
                       className="btn-ghost search-clear-results"
@@ -1567,21 +1584,6 @@ export function App() {
                       <MdIcon name="close" />
                       <span>{t(lang, 'searchClearResults')}</span>
                     </button>
-                  </div>
-                ) : null}
-                {message ? (
-                  <div className={`search-rec${searchMeta.report_unidentified ? ' unsure' : ''}${searchMeta.mode === 'product' ? ` ${productRecClass(searchMeta.buy_recommendation)}` : ''}`}>
-                    <p>{message}</p>
-                    {searchMeta.mode === 'product' ? (
-                      <ProductCard
-                        lang={lang}
-                        meta={searchMeta}
-                        busy={busy}
-                        onSave={(props) => void doSearch({ confirm_add: true, product_props: props })}
-                      />
-                    ) : (
-                      <SearchFacts node={searchMeta.knowledge} />
-                    )}
                   </div>
                 ) : null}
                 {searchMeta.mode === 'product' ? null : (
