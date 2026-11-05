@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import {
+  cancelJob,
   exportGeneratedText,
   fetchCatalog,
   formatApiError,
@@ -26,9 +27,9 @@ import { apiUrl, portalUrl } from './config'
 import { useRequireAuth } from './useRequireAuth'
 import { CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type NavCategoryId } from './icons'
 import { LANGS, languageOptionLabel, speechLang, t, type Lang } from './i18n'
-import { WORLD_REGIONS, regionLabel } from './regions'
 import { SearchCapture, hitFromCode, type CaptureHit } from './SearchCapture'
 import { FileUpload } from './FileUpload'
+import { NotesPanel } from './NotesPanel'
 import { openRememberedOutput, readOutputMeta, saveOutputAndRemember } from './outputMemory'
 
 type Rec = {
@@ -52,15 +53,15 @@ let activeObjectUrl: string | null = null
 const LLM_TOOL_IDS = new Set([
   'summarize',
   'translate',
-  'rewrite',
   'generate_document',
-  'classify',
   'stt',
   'video_translate',
   'audio_translate',
   'youtube_summarize',
   'youtube_translate',
 ])
+
+const PROGRESS_KEYS = ['progressWorking', 'progressUploading', 'progressProcessing', 'progressAlmost'] as const
 const YOUTUBE_TOOL_IDS = new Set(['youtube_mp4', 'youtube_mp3'])
 const YOUTUBE_LLM_TOOL_IDS = new Set(['youtube_summarize', 'youtube_translate'])
 const HIDDEN_TOOL_IDS = new Set(['youtube_mp4', 'youtube_mp3'])
@@ -355,7 +356,6 @@ export function App() {
   const [loadError, setLoadError] = useState('')
   const [openInfoId, setOpenInfoId] = useState<string | null>(null)
   const [regionMode, setRegionMode] = useState<'auto' | 'manual'>('auto')
-  const [regionChoice, setRegionChoice] = useState('SG')
   const [regionCustom, setRegionCustom] = useState('')
   const [searchKind, setSearchKind] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
@@ -368,6 +368,7 @@ export function App() {
   const [docFormat, setDocFormat] = useState('docx')
   const [docTemplate, setDocTemplate] = useState('')
   const [exportBusy, setExportBusy] = useState(false)
+  const [progressHint, setProgressHint] = useState('')
   const [contactPrefill, setContactPrefill] = useState(() => {
     const params = new URLSearchParams(window.location.search)
     const url = params.get('url') || ''
@@ -382,6 +383,7 @@ export function App() {
   })
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const chatAbortRef = useRef<AbortController | null>(null)
+  const runAbortRef = useRef<{ controller: AbortController; jobId: string } | null>(null)
   const speakStreamRef = useRef<ReturnType<typeof createSpeakStream> | null>(null)
   const voiceRef = useRef<{
     rec?: Rec
@@ -589,6 +591,30 @@ export function App() {
     setSelected(first)
   }
 
+  function startProgressHints() {
+    let i = 0
+    setProgressHint(t(lang, PROGRESS_KEYS[0]))
+    return window.setInterval(() => {
+      i = (i + 1) % PROGRESS_KEYS.length
+      setProgressHint(t(lang, PROGRESS_KEYS[i]))
+    }, 900)
+  }
+
+  function clearRunAbort() {
+    runAbortRef.current = null
+    setProgressHint('')
+  }
+
+  function onCancelWorking() {
+    const active = runAbortRef.current
+    if (!active) return
+    void cancelJob(active.jobId)
+    active.controller.abort()
+    setBusy(false)
+    setProgressHint('')
+    setError(t(lang, 'cancelled'))
+  }
+
   async function onRun(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selected) return
@@ -603,22 +629,30 @@ export function App() {
         if (!(await ensureAuth())) return
       }
     }
+    const jobId = crypto.randomUUID().replace(/-/g, '')
+    const controller = new AbortController()
+    runAbortRef.current = { controller, jobId }
+    const hintTimer = startProgressHints()
     setBusy(true)
     setError('')
     if (YOUTUBE_TOOL_IDS.has(selected.id)) {
       localStorage.setItem(YOUTUBE_USED_KEY, '1')
     }
     try {
+      const form = new FormData(formEl)
+      form.set('job_id', jobId)
       let result
       try {
-        result = await runTool(selected.id, new FormData(formEl))
+        result = await runTool(selected.id, form, controller.signal)
       } catch (exc) {
         // TTS (and similar) may need login only when the server must call the LLM.
         if (!isSignInRequiredError(exc) || !(await ensureAuth())) throw exc
-        result = await runTool(selected.id, new FormData(formEl))
+        const retry = new FormData(formEl)
+        retry.set('job_id', jobId)
+        result = await runTool(selected.id, retry, controller.signal)
       }
       setMessage(result.message)
-      if (selected.id === 'summarize' || selected.id === 'rewrite') {
+      if (selected.id === 'summarize') {
         setDownloads([])
       } else {
         setDownloads(result.downloads)
@@ -626,14 +660,20 @@ export function App() {
       setSearchHits(result.results || [])
       setSearchMeta(result.meta || {})
     } catch (exc) {
-      setError(
-        YOUTUBE_TOOL_IDS.has(selected.id) || YOUTUBE_LLM_TOOL_IDS.has(selected.id)
-          ? formatYoutubeError(exc)
-          : formatApiError(exc),
-      )
+      if (controller.signal.aborted || (exc instanceof DOMException && exc.name === 'AbortError')) {
+        setError(t(lang, 'cancelled'))
+      } else {
+        setError(
+          YOUTUBE_TOOL_IDS.has(selected.id) || YOUTUBE_LLM_TOOL_IDS.has(selected.id)
+            ? formatYoutubeError(exc)
+            : formatApiError(exc),
+        )
+      }
       setSearchHits([])
       setSearchMeta({})
     } finally {
+      window.clearInterval(hintTimer)
+      clearRunAbort()
       setBusy(false)
     }
   }
@@ -650,28 +690,39 @@ export function App() {
       setError(t(lang, 'searchNeedQuery'))
       return
     }
+    const jobId = crypto.randomUUID().replace(/-/g, '')
+    const controller = new AbortController()
+    runAbortRef.current = { controller, jobId }
+    const hintTimer = startProgressHints()
     setBusy(true)
     setError('')
     try {
+      const typed = regionCustom.trim()
       const result = await runSearch({
         query,
         mode,
-        region: regionMode === 'manual' ? (regionCustom.trim() || regionChoice) : 'AUTO',
+        region: regionMode === 'manual' ? (typed || 'CUSTOM') : 'AUTO',
         language: lang,
-        location: regionMode === 'manual' ? (regionCustom.trim() || regionLabel(regionChoice)) : '',
+        location: regionMode === 'manual' ? typed : '',
         barcode,
         confirm_add: opts?.confirm_add,
         product_props: opts?.product_props,
-      })
+      }, controller.signal)
       setMessage(result.message)
       setSearchHits(result.results || [])
       setSearchMeta(result.meta || {})
     } catch (exc) {
-      setError(formatApiError(exc))
+      if (controller.signal.aborted || (exc instanceof DOMException && exc.name === 'AbortError')) {
+        setError(t(lang, 'cancelled'))
+      } else {
+        setError(formatApiError(exc))
+      }
       setSearchHits([])
       setSearchMeta({})
       setMessage('')
     } finally {
+      window.clearInterval(hintTimer)
+      clearRunAbort()
       setBusy(false)
     }
   }
@@ -1098,8 +1149,8 @@ export function App() {
         </div>
       </section>
 
-      <div className={`workspace${category === 'help' ? ' need-tool' : ''}`} style={{ ['--assistant-width' as string]: `${assistantWidth}px` }}>
-        {category !== 'help' && (
+      <div className={`workspace${category === 'help' ? ' need-tool' : ''}${category === 'ai' ? ' ai-home' : ''}`} style={{ ['--assistant-width' as string]: `${assistantWidth}px` }}>
+        {category !== 'help' && category !== 'ai' && (
         <aside className="catalog">
           <div className="catalog-head" style={{ borderColor: accent.accent }}>
             <ToolGlyph category={category} />
@@ -1165,7 +1216,7 @@ export function App() {
         </aside>
         )}
 
-        <main className={`panel${category === 'help' ? ' need-tool' : ''}`}>
+        <main className={`panel${category === 'help' ? ' need-tool' : ''}${category === 'ai' ? ' ai-home-panel' : ''}`}>
           {category === 'safety' && selected?.id === 'image_privacy_check' && (
             <ScanPage
               key="image_privacy_check"
@@ -1197,15 +1248,14 @@ export function App() {
               signedInEmail={auth.isAuthenticated ? auth.email : ''}
             />
           )}
-          {category !== 'help' && category !== 'safety' && !selected && <p className="empty">{t(lang, 'empty')}</p>}
-          {category !== 'help' && category !== 'safety' && selected && selected.id === 'web_search' && (
+          {category !== 'help' && category !== 'safety' && category !== 'ai' && !selected && <p className="empty">{t(lang, 'empty')}</p>}
+          {category === 'ai' && (
             <form
-              key={selected.id}
+              key="ai-search"
               className={`google-search${searchHits.length || message ? ' has-results' : ''}`}
               onSubmit={onSearch}
             >
-              <h2>{t(lang, 'searchCat')}</h2>
-              <p className="search-subtitle">{t(lang, 'searchSubtitle')}</p>
+              <p className="search-subtitle search-hero">{t(lang, 'searchSubtitle')}</p>
               <div className="google-box">
                 {searchImageUrl ? (
                   <img className="search-image-thumb" src={searchImageUrl} alt={t(lang, 'searchPhotoAttached')} />
@@ -1276,10 +1326,17 @@ export function App() {
                     </svg>
                   </button>
                 </div>
-                <button type="submit" className="btn-primary search-submit" disabled={busy}>
-                  {busy ? t(lang, 'working') : t(lang, 'searchAction')}
-                </button>
+                {busy ? (
+                  <button type="button" className="btn-secondary search-submit" onClick={onCancelWorking}>
+                    {t(lang, 'cancel')}
+                  </button>
+                ) : (
+                  <button type="submit" className="btn-primary search-submit">
+                    {t(lang, 'searchAction')}
+                  </button>
+                )}
               </div>
+              {busy ? <WorkingProgress hint={progressHint} /> : null}
               {captureTab ? (
                 <SearchCapture
                   key={`${captureTab}-${searchKind}`}
@@ -1294,13 +1351,13 @@ export function App() {
                   onHit={(hit) => void onCaptureHit(hit)}
                 />
               ) : null}
-              <div className="search-controls">
+              <div className="search-controls search-controls-inline">
                 <fieldset className="search-kinds">
                   <legend className="sr-only">{t(lang, 'searchMode')}</legend>
                   {([
-                    ['people', t(lang, 'searchPeople')],
-                    ['topic', t(lang, 'searchTopic')],
-                    ['product', t(lang, 'searchProduct')],
+                    ['people', t(lang, 'modePeople')],
+                    ['topic', t(lang, 'modeTopic')],
+                    ['product', t(lang, 'modeProduct')],
                   ] as const).map(([value, label]) => (
                     <label key={value} className="search-kind">
                       <input
@@ -1315,59 +1372,40 @@ export function App() {
                     </label>
                   ))}
                 </fieldset>
-                <label>
-                  {t(lang, 'searchRegion')}
-                  <select
-                    name="region_mode"
-                    value={regionMode}
-                    onChange={(event) => setRegionMode(event.target.value as 'auto' | 'manual')}
-                  >
-                    <option value="auto">Auto</option>
-                    <option value="manual">Manual</option>
-                  </select>
-                </label>
-                {regionMode === 'manual' ? (
-                  <>
-                    <label>
-                      Choose region
-                      <select
-                        value={regionChoice}
-                        onChange={(event) => {
-                          setRegionChoice(event.target.value)
-                          setRegionCustom('')
-                        }}
-                      >
-                        {WORLD_REGIONS.map((item) => (
-                          <option key={item.code} value={item.code}>{item.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Or type region
-                      <input
-                        type="text"
-                        value={regionCustom}
-                        onChange={(event) => setRegionCustom(event.target.value)}
-                        placeholder="City, state, or country"
-                      />
-                    </label>
+                <fieldset className="search-kinds search-region-row">
+                  <legend className="search-region-legend">{t(lang, 'searchRegion')}</legend>
+                  <label className="search-kind">
                     <input
-                      type="hidden"
-                      name="region"
-                      value={regionCustom.trim() || regionChoice}
+                      type="checkbox"
+                      checked={regionMode === 'auto'}
+                      onChange={() => {
+                        setRegionMode('auto')
+                        setRegionCustom('')
+                      }}
                     />
+                    {t(lang, 'modeAuto')}
+                  </label>
+                  <label className="search-kind">
                     <input
-                      type="hidden"
-                      name="location"
-                      value={regionCustom.trim() || regionLabel(regionChoice)}
+                      type="checkbox"
+                      checked={regionMode === 'manual'}
+                      onChange={() => setRegionMode((current) => (current === 'manual' ? 'auto' : 'manual'))}
                     />
-                  </>
-                ) : (
-                  <>
-                    <input type="hidden" name="region" value="AUTO" />
-                    <input type="hidden" name="location" value="" />
-                  </>
-                )}
+                    {t(lang, 'regionType')}
+                  </label>
+                  {regionMode === 'manual' ? (
+                    <input
+                      className="region-type-input"
+                      type="text"
+                      value={regionCustom}
+                      onChange={(event) => setRegionCustom(event.target.value)}
+                      placeholder={t(lang, 'regionTypePlaceholder')}
+                      aria-label={t(lang, 'regionType')}
+                    />
+                  ) : null}
+                </fieldset>
+                <input type="hidden" name="region" value={regionMode === 'manual' ? (regionCustom.trim() || 'CUSTOM') : 'AUTO'} />
+                <input type="hidden" name="location" value={regionMode === 'manual' ? regionCustom.trim() : ''} />
                 <input type="hidden" name="language" value={lang} />
               </div>
               {error && <p className="error">{error}</p>}
@@ -1391,7 +1429,8 @@ export function App() {
               )}
             </form>
           )}
-          {category !== 'help' && category !== 'safety' && selected && selected.id !== 'web_search' && selected.id === 'translate' && (
+          {category === 'ai' && <NotesPanel lang={lang} accent={accent.accent} />}
+          {category !== 'help' && category !== 'safety' && category !== 'ai' && selected && selected.id === 'translate' && (
             <form key={selected.id} className="tool-form translate-form" onSubmit={onRun}>
               <div className="tool-hero">
                 <ToolGlyph category={selected.category} />
@@ -1451,15 +1490,20 @@ export function App() {
                   emptyLabel={t(lang, 'files')}
                   onError={(message) => setError(message)}
                 />
-                <button type="submit" className="btn-primary gt-action" disabled={busy}>
-                  {busy ? t(lang, 'working') : selected.title}
-                </button>
+                {busy ? (
+                  <>
+                    <WorkingProgress hint={progressHint} />
+                    <button type="button" className="btn-secondary gt-action" onClick={onCancelWorking}>{t(lang, 'cancel')}</button>
+                  </>
+                ) : (
+                  <button type="submit" className="btn-primary gt-action">{selected.title}</button>
+                )}
                 {error && <p className="error">{error}</p>}
                 <DownloadList lang={lang} toolId={selected.id} items={downloads} />
               </div>
             </form>
           )}
-          {category !== 'help' && category !== 'safety' && selected && (selected.id === 'youtube_mp4' || selected.id === 'youtube_mp3') && (
+          {category !== 'help' && category !== 'safety' && category !== 'ai' && selected && (selected.id === 'youtube_mp4' || selected.id === 'youtube_mp3') && (
             <YoutubeToolForm
               tool={selected}
               kind={selected.id === 'youtube_mp3' ? 'mp3' : 'mp4'}
@@ -1470,14 +1514,17 @@ export function App() {
               downloads={downloads}
               runLabel={t(lang, 'run')}
               workingLabel={t(lang, 'working')}
+              cancelLabel={t(lang, 'cancel')}
+              progressHint={progressHint}
               resultLabel={t(lang, 'result')}
               signInHint={t(lang, 'youtubeSignInHint')}
               investigateLabel={t(lang, 'youtubeInvestigate')}
               onInvestigate={(url) => openContact(url)}
+              onCancel={onCancelWorking}
               onSubmit={onRun}
             />
           )}
-          {category !== 'help' && category !== 'safety' && selected && selected.id === 'youtube_download' && (
+          {category !== 'help' && category !== 'safety' && category !== 'ai' && selected && selected.id === 'youtube_download' && (
             <div className="tool-form modern-tool">
               <div className="tool-hero">
                 <ToolGlyph category={selected.category} />
@@ -1505,8 +1552,8 @@ export function App() {
               </div>
             </div>
           )}
-          {category !== 'help' && category !== 'safety' && selected && selected.id !== 'web_search' && selected.id !== 'translate'
-            && selected.id !== 'summarize' && selected.id !== 'rewrite' && selected.id !== 'generate_document'
+          {category !== 'help' && category !== 'safety' && category !== 'ai' && selected && selected.id !== 'web_search' && selected.id !== 'translate'
+            && selected.id !== 'summarize' && selected.id !== 'generate_document'
             && selected.id !== 'youtube_mp4' && selected.id !== 'youtube_mp3' && selected.id !== 'youtube_download' && (
             <form key={selected.id} className="tool-form modern-tool" onSubmit={onRun}>
               <div className="tool-hero">
@@ -1554,15 +1601,22 @@ export function App() {
               <div className="field-stack">
                 <ToolFields fields={selected.fields} />
               </div>
-              <button type="submit" className="btn-primary" disabled={busy} style={{ background: accent.accent }}>
-                {busy ? t(lang, 'working') : t(lang, 'run')}
-              </button>
+              {busy ? (
+                <>
+                  <WorkingProgress hint={progressHint} />
+                  <button type="button" className="btn-secondary" onClick={onCancelWorking}>{t(lang, 'cancel')}</button>
+                </>
+              ) : (
+                <button type="submit" className="btn-primary" style={{ background: accent.accent }}>
+                  {t(lang, 'run')}
+                </button>
+              )}
               {error && <p className="error">{error}</p>}
               {message && <p className="ok">{t(lang, 'result')}: {message}</p>}
               <DownloadList lang={lang} toolId={selected.id} items={downloads} />
             </form>
           )}
-          {category !== 'help' && category !== 'safety' && selected && (selected.id === 'summarize' || selected.id === 'rewrite') && (
+          {category !== 'help' && category !== 'safety' && category !== 'ai' && selected && selected.id === 'summarize' && (
             <form key={selected.id} className="tool-form modern-tool" onSubmit={onRun}>
               <div className="tool-hero">
                 <ToolGlyph category={selected.category} />
@@ -1597,9 +1651,16 @@ export function App() {
                   </label>
                 ))}
               </div>
-              <button type="submit" className="btn-primary" disabled={busy} style={{ background: accent.accent }}>
-                {busy ? t(lang, 'working') : t(lang, 'run')}
-              </button>
+              {busy ? (
+                <>
+                  <WorkingProgress hint={progressHint} />
+                  <button type="button" className="btn-secondary" onClick={onCancelWorking}>{t(lang, 'cancel')}</button>
+                </>
+              ) : (
+                <button type="submit" className="btn-primary" style={{ background: accent.accent }}>
+                  {t(lang, 'run')}
+                </button>
+              )}
               {error && <p className="error">{error}</p>}
               {message ? (
                 <div className="result-card">
@@ -1624,7 +1685,7 @@ export function App() {
               ) : null}
             </form>
           )}
-          {category !== 'help' && category !== 'safety' && selected && selected.id === 'generate_document' && (
+          {category !== 'help' && category !== 'safety' && category !== 'ai' && selected && selected.id === 'generate_document' && (
             <form key={selected.id} className="tool-form modern-tool" onSubmit={onRun}>
               <div className="tool-hero">
                 <ToolGlyph category={selected.category} />
@@ -1679,9 +1740,16 @@ export function App() {
                   onError={(message) => setError(message)}
                 />
               </div>
-              <button type="submit" className="btn-primary" disabled={busy} style={{ background: accent.accent }}>
-                {busy ? t(lang, 'working') : t(lang, 'run')}
-              </button>
+              {busy ? (
+                <>
+                  <WorkingProgress hint={progressHint} />
+                  <button type="button" className="btn-secondary" onClick={onCancelWorking}>{t(lang, 'cancel')}</button>
+                </>
+              ) : (
+                <button type="submit" className="btn-primary" style={{ background: accent.accent }}>
+                  {t(lang, 'run')}
+                </button>
+              )}
               {error && <p className="error">{error}</p>}
               {message && <p className="ok">{t(lang, 'result')}: {message}</p>}
               <DownloadList lang={lang} toolId={selected.id} items={downloads} />
@@ -1756,6 +1824,17 @@ function youtubeQualityLabel(kind: 'mp4' | 'mp3', option: string): string {
   return `${option}p`
 }
 
+function WorkingProgress({ hint }: { hint: string }) {
+  return (
+    <div className="run-progress" role="status" aria-live="polite">
+      <div className="run-progress-track" aria-hidden="true">
+        <div className="run-progress-bar" />
+      </div>
+      <p className="run-progress-text">{hint}</p>
+    </div>
+  )
+}
+
 function YoutubeToolForm({
   tool,
   kind,
@@ -1766,10 +1845,13 @@ function YoutubeToolForm({
   downloads,
   runLabel,
   workingLabel,
+  cancelLabel,
+  progressHint,
   resultLabel,
   signInHint,
   investigateLabel,
   onInvestigate,
+  onCancel,
   onSubmit,
 }: {
   tool: Tool
@@ -1781,10 +1863,13 @@ function YoutubeToolForm({
   downloads: Download[]
   runLabel: string
   workingLabel: string
+  cancelLabel: string
+  progressHint: string
   resultLabel: string
   signInHint: string
   investigateLabel: string
   onInvestigate: (url: string) => void
+  onCancel: () => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
   const urlField = tool.fields.find((field) => field.name === 'url')
@@ -1889,9 +1974,16 @@ function YoutubeToolForm({
         </label>
       </div>
       <p className="field-hint">{signInHint}</p>
-      <button type="submit" className="btn-primary" disabled={busy} style={{ background: accent }}>
-        {busy ? workingLabel : runLabel}
-      </button>
+      {busy ? (
+        <>
+          <WorkingProgress hint={progressHint || workingLabel} />
+          <button type="button" className="btn-secondary" onClick={onCancel}>{cancelLabel}</button>
+        </>
+      ) : (
+        <button type="submit" className="btn-primary" style={{ background: accent }}>
+          {runLabel}
+        </button>
+      )}
       {(error || probeError) && (
         <p className="error">
           {error || probeError}{' '}

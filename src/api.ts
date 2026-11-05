@@ -298,7 +298,7 @@ export async function runSearch(body: {
   product_props?: Record<string, string>
   age_group?: string
   diet?: string
-}): Promise<{ message: string; results: SearchHit[]; meta: SearchMeta }> {
+}, signal?: AbortSignal): Promise<{ message: string; results: SearchHit[]; meta: SearchMeta }> {
   const response = await apiFetch(apiUrl('/api/search'), {
     method: 'POST',
     headers: {
@@ -306,6 +306,7 @@ export async function runSearch(body: {
       ...(await headers()),
     },
     body: JSON.stringify(body),
+    signal,
   })
   const payload = await response.json().catch(() => ({ detail: response.statusText }))
   if (!response.ok) throw new Error(userHttpError(response.status, payload.detail, 'Could not search. Please try again.'))
@@ -313,6 +314,18 @@ export async function runSearch(body: {
     message: payload.message || '',
     results: payload.results || [],
     meta: payload.meta || {},
+  }
+}
+
+export async function cancelJob(jobId: string): Promise<void> {
+  if (!jobId) return
+  try {
+    await apiFetch(apiUrl(`/api/jobs/${jobId}/cancel`), {
+      method: 'POST',
+      headers: await headers(),
+    })
+  } catch {
+    // Best-effort — AbortController disconnect still cancels on the server.
   }
 }
 
@@ -336,8 +349,17 @@ export async function rejectSearchPerson(nodeId: string): Promise<{ message: str
 export async function runTool(
   id: string,
   form: FormData,
-): Promise<{ message: string; downloads: Download[]; results: SearchHit[]; meta: SearchMeta }> {
-  const response = await apiFetch(apiUrl(`/api/tools/${id}`), { method: 'POST', body: form, headers: await headers() })
+  signal?: AbortSignal,
+): Promise<{ message: string; downloads: Download[]; results: SearchHit[]; meta: SearchMeta; job_id?: string }> {
+  if (!form.has('job_id')) {
+    form.set('job_id', crypto.randomUUID().replace(/-/g, ''))
+  }
+  const response = await apiFetch(apiUrl(`/api/tools/${id}`), {
+    method: 'POST',
+    body: form,
+    headers: await headers(),
+    signal,
+  })
   const payload = await response.json().catch(() => ({ detail: response.statusText }))
   if (!response.ok) throw new Error(userHttpError(response.status, payload.detail, 'That tool could not be completed. Please try again.'))
   return {
@@ -345,6 +367,7 @@ export async function runTool(
     downloads: payload.downloads || [],
     results: payload.results || [],
     meta: payload.meta || {},
+    job_id: payload.job_id || form.get('job_id')?.toString(),
   }
 }
 
