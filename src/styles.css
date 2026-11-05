@@ -289,10 +289,13 @@ button { cursor: pointer; }
 
 .search-subtitle.search-hero {
   font-family: "Fraunces", Georgia, serif;
-  font-size: clamp(1.35rem, 2.5vw, 2.1rem);
+  font-size: clamp(1.05rem, 1.8vw, 1.55rem);
   color: #134e4a;
-  max-width: min(760px, 100%);
+  max-width: min(920px, 100%);
   line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .google-box {

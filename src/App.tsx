@@ -35,7 +35,6 @@ import { MdIcon } from './MdIcon'
 import { getTurnstileToken } from './turnstile'
 import { TURNSTILE_SITEKEY } from './config'
 import { openRememberedOutput, readOutputMeta, saveOutputAndRemember } from './outputMemory'
-import { PROFILE_REGIONS } from './regions'
 
 type Rec = {
   lang: string
@@ -363,8 +362,7 @@ export function App() {
   const [loadError, setLoadError] = useState('')
   const [openInfoId, setOpenInfoId] = useState<string | null>(null)
   const [regionMode, setRegionMode] = useState<'auto' | 'manual'>('auto')
-  /** Manual product region: HK | CN | IN | US | OTHER (same as Senior). */
-  const [regionCustom, setRegionCustom] = useState('HK')
+  const [regionCustom, setRegionCustom] = useState('')
   const [searchKind, setSearchKind] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchBarcode, setSearchBarcode] = useState('')
@@ -752,11 +750,11 @@ export function App() {
           return
         }
       }
-      const typed = regionCustom.trim().toUpperCase() || 'OTHER'
+      const typed = regionCustom.trim()
       const result = await runSearch({
         query,
         mode,
-        region: regionMode === 'manual' ? typed : 'AUTO',
+        region: regionMode === 'manual' ? (typed || 'CUSTOM') : 'AUTO',
         language: lang,
         location: regionMode === 'manual' ? typed : '',
         barcode,
@@ -1475,28 +1473,52 @@ export function App() {
                       />
                       {t(lang, 'modeAuto')}
                     </label>
-                    {PROFILE_REGIONS.map((item) => (
-                      <label key={item.code} className="search-kind">
-                        <input
-                          type="checkbox"
-                          checked={regionMode === 'manual' && regionCustom === item.code}
-                          onChange={() => {
-                            setRegionCustom(item.code)
-                            setRegionMode((current) =>
-                              current === 'manual' && regionCustom === item.code ? 'auto' : 'manual',
-                            )
-                          }}
-                        />
-                        {item.label}
-                      </label>
-                    ))}
+                    <label className="search-kind">
+                      <input
+                        type="checkbox"
+                        checked={regionMode === 'manual'}
+                        onChange={() => setRegionMode((current) => (current === 'manual' ? 'auto' : 'manual'))}
+                      />
+                      {t(lang, 'regionType')}
+                    </label>
+                    <input
+                      className="region-type-input"
+                      type="text"
+                      value={regionCustom}
+                      onChange={(event) => {
+                        setRegionCustom(event.target.value)
+                        if (event.target.value.trim()) setRegionMode('manual')
+                      }}
+                      placeholder={t(lang, 'regionTypePlaceholder')}
+                      aria-label={t(lang, 'regionType')}
+                    />
                   </span>
                 </fieldset>
-                <input type="hidden" name="region" value={regionMode === 'manual' ? (regionCustom || 'OTHER') : 'AUTO'} />
-                <input type="hidden" name="location" value={regionMode === 'manual' ? (regionCustom || 'OTHER') : ''} />
+                <input type="hidden" name="region" value={regionMode === 'manual' ? (regionCustom.trim() || 'CUSTOM') : 'AUTO'} />
+                <input type="hidden" name="location" value={regionMode === 'manual' ? regionCustom.trim() : ''} />
                 <input type="hidden" name="language" value={lang} />
               </div>
               {error && <p className="error">{error}</p>}
+              <NotesPanel
+                lang={lang}
+                accent={accent.accent}
+                collapseToken={notesCollapseToken}
+                onUseAsSearch={(value) => {
+                  const query = value.replace(/\s+/g, ' ').trim()
+                  setSearchQuery(query)
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                  requestAnimationFrame(() => {
+                    document.querySelector<HTMLInputElement>('input[name="query"]')?.focus()
+                  })
+                  const mode = searchKind
+                  if (mode !== 'people' && mode !== 'topic' && mode !== 'product') {
+                    setError(t(lang, 'chooseSearchType'))
+                    return
+                  }
+                  setError('')
+                  void doSearch({ query, mode })
+                }}
+              />
               <div className="search-outcome">
                 {(message || searchHits.length > 0) ? (
                   <div className="search-outcome-bar">
@@ -1530,26 +1552,6 @@ export function App() {
                   <SearchResults items={searchHits} heading={t(lang, 'webResults')} />
                 )}
               </div>
-              <NotesPanel
-                lang={lang}
-                accent={accent.accent}
-                collapseToken={notesCollapseToken}
-                onUseAsSearch={(value) => {
-                  const query = value.replace(/\s+/g, ' ').trim()
-                  setSearchQuery(query)
-                  window.scrollTo({ top: 0, behavior: 'smooth' })
-                  requestAnimationFrame(() => {
-                    document.querySelector<HTMLInputElement>('input[name="query"]')?.focus()
-                  })
-                  const mode = searchKind
-                  if (mode !== 'people' && mode !== 'topic' && mode !== 'product') {
-                    setError(t(lang, 'chooseSearchType'))
-                    return
-                  }
-                  setError('')
-                  void doSearch({ query, mode })
-                }}
-              />
             </form>
           )}
           {category !== 'help' && category !== 'safety' && category !== 'ai' && selected && selected.id === 'translate' && (
