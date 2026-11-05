@@ -1198,10 +1198,18 @@ export function App() {
           })}
         </nav>
         <div className="top-actions">
-          <label className="field-inline topbar-lang">
-            {t(lang, 'language')}
-            <select value={lang} onChange={(event) => setLang(event.target.value as Lang)}>
-              {LANGS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          <label className="topbar-lang" title={t(lang, 'language')}>
+            <span className="sr-only">{t(lang, 'language')}</span>
+            <select
+              value={lang}
+              onChange={(event) => setLang(event.target.value as Lang)}
+              aria-label={t(lang, 'language')}
+            >
+              {LANGS.map((item) => (
+                <option key={item.id} value={item.id} title={item.label}>
+                  {item.short}
+                </option>
+              ))}
             </select>
           </label>
           {auth.configured && (

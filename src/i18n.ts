@@ -1,14 +1,14 @@
 export type Lang = 'en' | 'yue' | 'zh' | 'ta' | 'hi' | 'ml' | 'kn' | 'te'
 
-export const LANGS: { id: Lang; label: string; speech: string }[] = [
-  { id: 'en', label: 'English', speech: 'en-US' },
-  { id: 'yue', label: '粵語', speech: 'zh-HK' },
-  { id: 'zh', label: '中文', speech: 'zh-CN' },
-  { id: 'ta', label: 'தமிழ்', speech: 'ta-IN' },
-  { id: 'hi', label: 'हिन्दी', speech: 'hi-IN' },
-  { id: 'ml', label: 'മലയാളം', speech: 'ml-IN' },
-  { id: 'kn', label: 'ಕನ್ನಡ', speech: 'kn-IN' },
-  { id: 'te', label: 'తెలుగు', speech: 'te-IN' },
+export const LANGS: { id: Lang; label: string; short: string; speech: string }[] = [
+  { id: 'en', label: 'English', short: 'EN', speech: 'en-US' },
+  { id: 'yue', label: '粵語', short: 'YU', speech: 'zh-HK' },
+  { id: 'zh', label: '中文', short: 'ZH', speech: 'zh-CN' },
+  { id: 'ta', label: 'தமிழ்', short: 'TA', speech: 'ta-IN' },
+  { id: 'hi', label: 'हिन्दी', short: 'HI', speech: 'hi-IN' },
+  { id: 'ml', label: 'മലയാളം', short: 'ML', speech: 'ml-IN' },
+  { id: 'kn', label: 'ಕನ್ನಡ', short: 'KN', speech: 'kn-IN' },
+  { id: 'te', label: 'తెలుగు', short: 'TE', speech: 'te-IN' },
 ]
 
 const text: Record<Lang, Record<string, string>> = {
@@ -28,7 +28,7 @@ const text: Record<Lang, Record<string, string>> = {
     searchPlaceholderPeoplePhoto: 'Photo added — enter a name to search…',
     searchPlaceholderProductPhoto: 'Photo added — enter a product name or barcode…',
     searchPhotoAttached: 'Attached photo',
-    searchSubtitle: 'AI driven personalized search just for you.',
+    searchSubtitle: 'Personalized AI Search, Notes taking just for you.',
     searchMode: 'Search type',
     searchRegion: 'Region',
     regionType: 'Type',
@@ -272,7 +272,7 @@ const text: Record<Lang, Record<string, string>> = {
     searchPlaceholderPeoplePhoto: '已加入相片 — 輸入姓名再搜尋…',
     searchPlaceholderProductPhoto: '已加入相片 — 輸入產品名稱或條碼…',
     searchPhotoAttached: '已附加相片',
-    searchSubtitle: '專為你而設嘅 AI 個人化搜尋。',
+    searchSubtitle: '專為你而設嘅個人化 AI 搜尋同筆記。',
     searchMode: '搜尋類型',
     searchRegion: '地區',
     regionType: '輸入',
