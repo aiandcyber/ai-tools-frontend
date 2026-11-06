@@ -352,7 +352,33 @@ export function ScanPage({
         <ul className="downloads">
           {downloads.map((item) => (
             <li key={item.url}>
-              <a href={item.url} download={item.name}>{item.name}</a>
+              <a
+                href={item.url}
+                download={item.name}
+                onClick={(event) => {
+                  event.preventDefault()
+                  void (async () => {
+                    try {
+                      const response = await fetch(item.url)
+                      if (!response.ok) {
+                        setError(t(lang, 'downloadUnavailable'))
+                        return
+                      }
+                      const blob = await response.blob()
+                      const objectUrl = URL.createObjectURL(blob)
+                      const anchor = document.createElement('a')
+                      anchor.href = objectUrl
+                      anchor.download = item.name
+                      anchor.click()
+                      URL.revokeObjectURL(objectUrl)
+                    } catch {
+                      setError(t(lang, 'downloadUnavailable'))
+                    }
+                  })()
+                }}
+              >
+                {item.name}
+              </a>
             </li>
           ))}
         </ul>

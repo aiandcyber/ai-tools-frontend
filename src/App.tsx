@@ -2381,6 +2381,26 @@ function ToolFields({ fields }: { fields: Tool['fields'] }) {
   )
 }
 
+async function downloadToolFile(url: string, name: string): Promise<'ok' | 'gone'> {
+  try {
+    const response = await fetch(apiUrl(url))
+    if (!response.ok) return 'gone'
+    const blob = await response.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = objectUrl
+    anchor.download = name
+    anchor.rel = 'noopener'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(objectUrl)
+    return 'ok'
+  } catch {
+    return 'gone'
+  }
+}
+
 function DownloadList({
   items,
   lang,
@@ -2399,7 +2419,17 @@ function DownloadList({
         <ul className="downloads">
           {items.map((item) => (
             <li key={item.url}>
-              <a href={apiUrl(item.url)}>{item.name}</a>{' '}
+              <a
+                href={apiUrl(item.url)}
+                onClick={(event) => {
+                  event.preventDefault()
+                  void downloadToolFile(item.url, item.name).then((result) => {
+                    setNote(result === 'ok' ? '' : t(lang, 'downloadUnavailable'))
+                  })
+                }}
+              >
+                {item.name}
+              </a>{' '}
               <button
                 type="button"
                 className="linkish"
@@ -2407,7 +2437,7 @@ function DownloadList({
                   void saveOutputAndRemember(toolId, apiUrl(item.url), item.name).then((result) => {
                     if (result.ok) setNote(`${t(lang, 'saveRememberOutput')}: ${result.name}`)
                     else if (result.reason === 'missing' || result.reason === 'download_failed') {
-                      setNote(t(lang, 'rememberedMissing'))
+                      setNote(t(lang, 'downloadUnavailable'))
                     } else if (result.reason === 'no_path_memory') {
                       setNote(t(lang, 'saveRememberOutput'))
                     } else {
