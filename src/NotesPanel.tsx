@@ -173,12 +173,36 @@ export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, o
   })
   /** Start open so Notes is ready; Pin is optional (keeps Notes open during search). */
   const [open, setOpen] = useState(true)
+  const [fullscreen, setFullscreen] = useState(false)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     paintCanvas(canvas, strokes)
-  }, [strokes, open])
+  }, [strokes, open, fullscreen])
+
+  useEffect(() => {
+    if (!fullscreen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setFullscreen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prev
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [fullscreen])
+
+  function enterFullscreen() {
+    setOpen(true)
+    setFullscreen(true)
+  }
+
+  function exitFullscreen() {
+    setFullscreen(false)
+  }
 
   useEffect(() => {
     if (collapseToken <= 0) return
@@ -504,20 +528,49 @@ export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, o
   const panelOpen = pinned || open
 
   return (
-    <section className={`note-card${panelOpen ? ' is-open' : ' is-collapsed'}${pinned ? ' is-pinned' : ''}`}>
+    <section
+      className={`note-card${panelOpen ? ' is-open' : ' is-collapsed'}${pinned ? ' is-pinned' : ''}${fullscreen ? ' is-fullscreen' : ''}`}
+      aria-modal={fullscreen || undefined}
+      role={fullscreen ? 'dialog' : undefined}
+      aria-label={fullscreen ? t(lang, 'notesFullscreen') : undefined}
+    >
       <div className="note-card-bar">
+        {fullscreen ? (
+          <button
+            type="button"
+            className="note-pin-btn note-fullscreen-back"
+            onClick={exitFullscreen}
+            title={t(lang, 'notesFullscreenBack')}
+          >
+            <MdIcon name="arrow_back" />
+            <span>{t(lang, 'notesFullscreenBack')}</span>
+          </button>
+        ) : null}
         <button
           type="button"
           className="note-toggle"
-          onClick={toggleOpen}
+          onClick={() => {
+            if (!fullscreen) toggleOpen()
+          }}
           aria-expanded={panelOpen}
           aria-controls="notes-panel-body"
-          disabled={pinned}
+          disabled={pinned || fullscreen}
           title={pinned ? t(lang, 'notesUnpinToCollapse') : (panelOpen ? t(lang, 'notesCollapse') : t(lang, 'notesExpand'))}
         >
           <MdIcon name={panelOpen ? 'expand_less' : 'expand_more'} />
           <span className="note-toggle-title">{t(lang, 'notesTitle')}</span>
         </button>
+        {!fullscreen ? (
+          <button
+            type="button"
+            className="note-pin-btn"
+            onClick={enterFullscreen}
+            title={t(lang, 'notesFullscreen')}
+          >
+            <MdIcon name="fullscreen" />
+            <span>{t(lang, 'notesFullscreen')}</span>
+          </button>
+        ) : null}
         <button
           type="button"
           className={`note-pin-btn${pinned ? ' active' : ''}`}
@@ -531,7 +584,7 @@ export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, o
       </div>
       {panelOpen ? (
         <div id="notes-panel-body" className="note-card-body" ref={bodyRef}>
-          <p>{t(lang, 'notesDesc')}</p>
+          {!fullscreen ? <p>{t(lang, 'notesDesc')}</p> : null}
           {fileHint}
           <div className="note-toolbar">
             <NoteButton icon="note_add" label={t(lang, 'noteNew')} onClick={onNew} disabled={busy} />
@@ -558,24 +611,28 @@ export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, o
             )}
           </div>
           {status ? <p className="field-hint note-status" style={{ color: accent }} role="status">{status}</p> : null}
-          <canvas
-            ref={canvasRef}
-            className="note-canvas"
-            width={960}
-            height={440}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerLeave={onPointerUp}
-          />
-          <textarea
-            className="note-text"
-            rows={11}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={t(lang, 'noteTextPlaceholder')}
-          />
-          <p className="field-hint">{t(lang, 'noteKeepOpenHint')}</p>
+          <div className="note-write-area">
+            <div className="note-canvas-wrap">
+              <canvas
+                ref={canvasRef}
+                className="note-canvas"
+                width={960}
+                height={440}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerLeave={onPointerUp}
+              />
+            </div>
+            <textarea
+              className="note-text"
+              rows={11}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={t(lang, 'noteTextPlaceholder')}
+            />
+          </div>
+          {!fullscreen ? <p className="field-hint">{t(lang, 'noteKeepOpenHint')}</p> : null}
         </div>
       ) : null}
     </section>

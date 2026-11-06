@@ -955,12 +955,31 @@ button { cursor: pointer; }
 }
 
 
+.note-write-area {
+  display: grid;
+  gap: 0.65rem;
+  min-height: 0;
+}
+
+.note-canvas-wrap {
+  width: 100%;
+  min-height: 14rem;
+  max-height: min(70vh, 40rem);
+  height: 22rem;
+  resize: vertical;
+  overflow: auto;
+  border: 1px solid #d6d3d1;
+  border-radius: 0.75rem;
+  background: #fffef8;
+}
+
 .note-canvas {
   width: 100%;
   max-width: 100%;
-  height: auto;
-  min-height: 22rem;
-  border: 1px solid #d6d3d1;
+  height: 100%;
+  min-height: 14rem;
+  display: block;
+  border: 0;
   border-radius: 0.75rem;
   touch-action: none;
   cursor: crosshair;
@@ -969,9 +988,59 @@ button { cursor: pointer; }
 
 .note-text {
   width: 100%;
-  margin-top: 0.65rem;
-  min-height: 12rem;
+  margin-top: 0;
+  min-height: 10rem;
+  max-height: min(70vh, 36rem);
+  height: 12rem;
   resize: vertical;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+.note-card.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  border-radius: 0;
+  border: 0;
+  padding: 0.75rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  background: #fffefb;
+  box-shadow: none;
+}
+
+.note-card.is-fullscreen .note-card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.note-card.is-fullscreen .note-toolbar {
+  flex: 0 0 auto;
+}
+
+.note-card.is-fullscreen .note-write-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-rows: minmax(10rem, 1fr) minmax(10rem, 1fr);
+}
+
+.note-card.is-fullscreen .note-canvas-wrap,
+.note-card.is-fullscreen .note-text {
+  max-height: none;
+  height: auto;
+  min-height: 10rem;
+}
+
+.note-fullscreen-back {
+  background: #ecfdf5;
+  border-color: #5eead4;
 }
 
 .note-list {
