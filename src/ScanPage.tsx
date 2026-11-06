@@ -268,7 +268,7 @@ export function ScanPage({
       )}
       {mode === 'file' && (
         <div
-          className={`dropzone${dragging ? ' dragging' : ''}`}
+          className={`dropzone dropzone-inline${dragging ? ' dragging' : ''}`}
           onDragEnter={(event) => { event.preventDefault(); setDragging(true) }}
           onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
           onDragLeave={() => setDragging(false)}
@@ -288,15 +288,20 @@ export function ScanPage({
             type="file"
             onChange={(event) => syncNames(event.target.files)}
           />
-          <p className="dropzone-title">{t(lang, 'dropHint')}</p>
-          <p className="field-hint">{t(lang, 'uploadMaxHint')}: {formatMaxBytes(VIRUS_MAX_BYTES)}</p>
+          <span className="dropzone-icon" aria-hidden>
+            <MdIcon name="upload_file" />
+          </span>
+          <div className="dropzone-copy">
+            <p className="dropzone-title">{t(lang, 'dropHint')}</p>
+            <p className="field-hint dropzone-max">{t(lang, 'uploadMaxHint')}: {formatMaxBytes(VIRUS_MAX_BYTES)}</p>
+          </div>
           <div className="dropzone-actions">
             <button type="button" className="btn-secondary" onClick={() => inputRef.current?.click()}>
               <MdIcon name="folder_open" />
               <span>{t(lang, 'browse')}</span>
             </button>
-            <p className="dropzone-files">{fileName || t(lang, 'files')}</p>
           </div>
+          <p className="dropzone-files">{fileName || t(lang, 'files')}</p>
           {uploadStatus ? <p className="upload-status" role="status">{uploadStatus}</p> : null}
         </div>
       )}

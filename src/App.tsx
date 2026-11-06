@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   cancelJob,
   exportGeneratedText,
@@ -2267,17 +2267,19 @@ function YoutubeToolForm({
           />
           {title ? <span className="field-hint">{title}</span> : null}
         </label>
-        <label className="field-card">
-          <span className="field-label">{qualityField?.label || 'Quality'}</span>
-          <select name="quality" value={quality} onChange={(event) => setQuality(event.target.value)}>
-            {qualityOptions.map((option) => (
-              <option key={option} value={option}>
-                {youtubeQualityLabel(kind, option)}
-              </option>
-            ))}
-          </select>
-          <span className="field-hint">{sizeText}</span>
-        </label>
+        <div className="field-row">
+          <label className="field-card field-card-compact">
+            <span className="field-label">{qualityField?.label || 'Quality'}</span>
+            <select name="quality" value={quality} onChange={(event) => setQuality(event.target.value)}>
+              {qualityOptions.map((option) => (
+                <option key={option} value={option}>
+                  {youtubeQualityLabel(kind, option)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <span className="field-hint">{sizeText}</span>
       </div>
       <p className="field-hint">{signInHint}</p>
       {busy ? (
@@ -2305,51 +2307,76 @@ function YoutubeToolForm({
   )
 }
 
+function isCompactField(field: Tool['fields'][number]) {
+  return field.kind === 'select' || field.kind === 'number'
+}
+
 function ToolFields({ fields }: { fields: Tool['fields'] }) {
   const [action, setAction] = useState(() => fields.find((field) => field.name === 'action')?.default || '')
+  const visible = fields.filter((field) => {
+    if (field.name === 'angle' && fields.some((item) => item.name === 'action') && action !== 'rotate') {
+      return false
+    }
+    return true
+  })
+  const groups: { compact: boolean; items: typeof visible }[] = []
+  for (const field of visible) {
+    const compact = isCompactField(field)
+    const last = groups[groups.length - 1]
+    if (compact && last?.compact) last.items.push(field)
+    else groups.push({ compact, items: [field] })
+  }
+
+  const renderField = (field: Tool['fields'][number]) => (
+    <label key={field.name} className={`field-card${isCompactField(field) ? ' field-card-compact' : ''}`}>
+      <span className="field-label">{field.label}</span>
+      {field.kind === 'textarea' ? (
+        <textarea
+          name={field.name}
+          defaultValue={field.default}
+          required={field.required}
+          rows={7}
+          placeholder={field.label}
+        />
+      ) : field.kind === 'select' ? (
+        <select
+          name={field.name}
+          defaultValue={field.default}
+          onChange={field.name === 'action' ? (event) => setAction(event.target.value) : undefined}
+        >
+          {field.options.map((option) => (
+            <option key={option} value={option}>
+              {field.name === 'language' || field.name === 'source_language'
+                ? languageOptionLabel(option)
+                : option}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          name={field.name}
+          type={field.kind}
+          defaultValue={field.default}
+          required={field.required}
+          placeholder={field.label}
+        />
+      )}
+    </label>
+  )
+
   return (
     <>
-      {fields.map((field) => {
-        if (field.name === 'angle' && fields.some((item) => item.name === 'action') && action !== 'rotate') {
-          return null
-        }
-        return (
-          <label key={field.name} className="field-card">
-            <span className="field-label">{field.label}</span>
-            {field.kind === 'textarea' ? (
-              <textarea
-                name={field.name}
-                defaultValue={field.default}
-                required={field.required}
-                rows={7}
-                placeholder={field.label}
-              />
-            ) : field.kind === 'select' ? (
-              <select
-                name={field.name}
-                defaultValue={field.default}
-                onChange={field.name === 'action' ? (event) => setAction(event.target.value) : undefined}
-              >
-                {field.options.map((option) => (
-                  <option key={option} value={option}>
-                    {field.name === 'language' || field.name === 'source_language'
-                      ? languageOptionLabel(option)
-                      : option}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                name={field.name}
-                type={field.kind}
-                defaultValue={field.default}
-                required={field.required}
-                placeholder={field.label}
-              />
-            )}
-          </label>
-        )
-      })}
+      {groups.map((group, index) =>
+        group.compact ? (
+          <div key={`row-${index}`} className="field-row">
+            {group.items.map(renderField)}
+          </div>
+        ) : (
+          <Fragment key={`block-${index}`}>
+            {group.items.map(renderField)}
+          </Fragment>
+        ),
+      )}
     </>
   )
 }

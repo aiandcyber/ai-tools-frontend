@@ -222,7 +222,7 @@ export function FileUpload({
 
   return (
     <div
-      className={`dropzone${dragging ? ' dragging' : ''}`}
+      className={`dropzone dropzone-inline${dragging ? ' dragging' : ''}`}
       onDragEnter={(event) => { event.preventDefault(); setDragging(true) }}
       onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
       onDragLeave={() => setDragging(false)}
@@ -244,8 +244,13 @@ export function FileUpload({
         multiple={multiple}
         onChange={(event) => void applyFiles(event.target.files)}
       />
-      <p className="dropzone-title">{dropHint}</p>
-      <p className="field-hint">{t(lang, 'uploadMaxHint')}: {formatMaxBytes(maxBytes)}</p>
+      <span className="dropzone-icon" aria-hidden>
+        <MdIcon name="upload_file" />
+      </span>
+      <div className="dropzone-copy">
+        <p className="dropzone-title">{dropHint}</p>
+        <p className="field-hint dropzone-max">{t(lang, 'uploadMaxHint')}: {formatMaxBytes(maxBytes)}</p>
+      </div>
       <div className="dropzone-actions">
         <button type="button" className="btn-secondary" onClick={() => inputRef.current?.click()}>
           <MdIcon name="folder_open" />
@@ -257,8 +262,8 @@ export function FileUpload({
             <span>{cameraLabel}</span>
           </button>
         ) : null}
-        <p className="dropzone-files">{names || emptyLabel}</p>
       </div>
+      <p className="dropzone-files">{names || emptyLabel}</p>
       {stage ? (
         <p className={`upload-status${stage === 'error' ? ' error' : stage === 'ready' ? ' ok' : ''}`} role="status">
           {stageLabel(stage)}
