@@ -603,8 +603,32 @@ export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, o
 
   const panelOpen = pinned || open
 
-  const penToolbar = (
-    <div className="note-pen-toolbar" role="toolbar" aria-label={t(lang, 'notePen')}>
+  const showPadHint = !strokes.length && !text.trim() && !recording
+
+  const toolsBox = (
+    <div className="note-tools-box" role="toolbar" aria-label={t(lang, 'notesTitle')}>
+      <NoteButton icon="note_add" label={t(lang, 'noteNew')} onClick={onNew} disabled={busy} />
+      <NoteButton icon="folder_open" label={t(lang, 'noteOpen')} onClick={() => void onOpen()} disabled={busy} />
+      <NoteButton icon="save" label={t(lang, 'noteSave')} onClick={() => void onSave()} disabled={busy} />
+      <NoteButton icon="search" label={t(lang, 'noteUseAsSearch')} onClick={useAsSearch} disabled={busy} />
+      {!recording ? (
+        <NoteButton
+          icon="mic"
+          label={t(lang, 'voice')}
+          onClick={startRec}
+          disabled={busy}
+          primary
+          accent={accent}
+        />
+      ) : (
+        <NoteButton
+          icon="stop"
+          label={t(lang, 'stop')}
+          onClick={stopRec}
+          listening
+        />
+      )}
+      <span className="note-pen-sep" aria-hidden="true" />
       <button
         type="button"
         className={`note-pen-tool${drawTool === 'pen' ? ' on' : ''}`}
@@ -625,7 +649,6 @@ export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, o
         <MdIcon name="ink_eraser" />
         <span>{t(lang, 'noteEraser')}</span>
       </button>
-      <span className="note-pen-sep" aria-hidden="true" />
       <div className="note-pen-colors" role="group" aria-label={t(lang, 'notePenColor')}>
         {PEN_COLORS.map((color) => (
           <button
@@ -688,6 +711,9 @@ export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, o
 
   const canvasBlock = (
     <div className={`note-canvas-wrap${drawTool === 'eraser' ? ' is-eraser' : ''}`}>
+      {showPadHint ? (
+        <p className="note-pad-hint" aria-hidden="true">{t(lang, 'notesDesc')}</p>
+      ) : null}
       <canvas
         ref={canvasRef}
         className="note-canvas"
@@ -760,42 +786,13 @@ export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, o
       </div>
       {panelOpen ? (
         <div id="notes-panel-body" className="note-card-body" ref={bodyRef}>
+          {fileHint}
+          {toolsBox}
+          {status ? <p className="field-hint note-status" style={{ color: accent }} role="status">{status}</p> : null}
           {fullscreen ? (
-            <>
-              {penToolbar}
-              {status ? <p className="field-hint note-status" style={{ color: accent }} role="status">{status}</p> : null}
-              <div className="note-handwrite-stage">{canvasBlock}</div>
-            </>
+            <div className="note-handwrite-stage">{canvasBlock}</div>
           ) : (
             <>
-              <p>{t(lang, 'notesDesc')}</p>
-              {fileHint}
-              <div className="note-toolbar">
-                <NoteButton icon="note_add" label={t(lang, 'noteNew')} onClick={onNew} disabled={busy} />
-                <NoteButton icon="folder_open" label={t(lang, 'noteOpen')} onClick={() => void onOpen()} disabled={busy} />
-                <NoteButton icon="save" label={t(lang, 'noteSave')} onClick={() => void onSave()} disabled={busy} />
-                <NoteButton icon="gesture" label={t(lang, 'noteHandwritingToText')} onClick={() => void handwritingToText()} disabled={busy} />
-                <NoteButton icon="search" label={t(lang, 'noteUseAsSearch')} onClick={useAsSearch} disabled={busy} />
-                {!recording ? (
-                  <NoteButton
-                    icon="mic"
-                    label={t(lang, 'voice')}
-                    onClick={startRec}
-                    disabled={busy}
-                    primary
-                    accent={accent}
-                  />
-                ) : (
-                  <NoteButton
-                    icon="stop"
-                    label={t(lang, 'stop')}
-                    onClick={stopRec}
-                    listening
-                  />
-                )}
-              </div>
-              {penToolbar}
-              {status ? <p className="field-hint note-status" style={{ color: accent }} role="status">{status}</p> : null}
               <div className="note-write-area">
                 {canvasBlock}
                 <textarea

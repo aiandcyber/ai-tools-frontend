@@ -875,19 +875,20 @@ button { cursor: pointer; }
   color: var(--muted);
 }
 
-.note-card-body .note-toolbar {
-  margin-top: 0.15rem;
-}
-
-.note-toolbar {
+.note-tools-box {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-bottom: 0.55rem;
   align-items: center;
+  gap: 0.35rem;
+  margin: 0.15rem 0 0.55rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #d6d3d1;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
 }
 
-.note-toolbar .md-text-btn {
+.note-tools-box .md-text-btn {
   flex: 0 0 auto;
   padding: 0.4rem 0.7rem;
   min-height: 2.15rem;
@@ -896,18 +897,13 @@ button { cursor: pointer; }
   white-space: nowrap;
 }
 
-.note-toolbar .md-text-btn span {
+.note-tools-box .md-text-btn span {
   white-space: nowrap;
 }
 
-.note-toolbar .md-icon {
+.note-tools-box .md-icon {
   font-size: 1.05rem;
   flex: 0 0 auto;
-}
-
-.note-toolbar input {
-  flex: 1 1 10rem;
-  min-width: 8rem;
 }
 
 .material-symbols-outlined.md-icon {
@@ -959,19 +955,6 @@ button { cursor: pointer; }
   display: grid;
   gap: 0.65rem;
   min-height: 0;
-}
-
-.note-pen-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-  margin: 0.15rem 0 0.55rem;
-  padding: 0.4rem 0.5rem;
-  border: 1px solid #d6d3d1;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
 }
 
 .note-pen-tool {
@@ -1050,6 +1033,7 @@ button { cursor: pointer; }
 }
 
 .note-canvas-wrap {
+  position: relative;
   width: 100%;
   min-height: 14rem;
   max-height: min(70vh, 40rem);
@@ -1059,6 +1043,21 @@ button { cursor: pointer; }
   border: 1px solid #d6d3d1;
   border-radius: 0.75rem;
   background: #fffef8;
+}
+
+.note-pad-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  align-items: flex-start;
+  pointer-events: none;
+  color: #94a3b8;
+  font-size: 0.98rem;
+  line-height: 1.45;
+  max-width: 40rem;
 }
 
 .note-canvas-wrap.is-eraser .note-canvas {
@@ -1114,10 +1113,9 @@ button { cursor: pointer; }
   gap: 0.45rem;
 }
 
-.note-card.is-fullscreen .note-pen-toolbar {
+.note-card.is-fullscreen .note-tools-box {
   flex: 0 0 auto;
   margin: 0;
-  justify-content: center;
 }
 
 .note-handwrite-stage {
