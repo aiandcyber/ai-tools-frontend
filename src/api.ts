@@ -79,6 +79,8 @@ export type SearchMeta = {
   biometric?: unknown
   gemini?: unknown
   lens?: unknown
+  /** Decoded text from tools like qr_scan / barcode_scan (shown on screen, not as a file). */
+  text?: string
 }
 
 let tokenGetter: (() => Promise<string>) | null = null

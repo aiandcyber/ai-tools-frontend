@@ -698,6 +698,11 @@ export function App() {
     const hintTimer = startProgressHints()
     setBusy(true)
     setError('')
+    setMessage('')
+    setDownloads([])
+    if (selected.id === 'qr_scan' || selected.id === 'barcode_scan') {
+      setSearchMeta({})
+    }
     if (YOUTUBE_TOOL_IDS.has(selected.id)) {
       localStorage.setItem(YOUTUBE_USED_KEY, '1')
     }
@@ -816,9 +821,11 @@ export function App() {
     for (const id of ['qr_scan', 'barcode_scan'] as const) {
       try {
         const result = await runTool(id, form)
-        const url = result.downloads[0]?.url
-        if (!url) continue
-        const text = (await (await fetch(apiUrl(url))).text()).trim()
+        let text = String(result.meta?.text || '').trim()
+        if (!text) {
+          const url = result.downloads[0]?.url
+          if (url) text = (await (await fetch(apiUrl(url))).text()).trim()
+        }
         if (text) return hitFromCode(text, id === 'barcode_scan' ? 'ean_13' : 'qr_code')
       } catch {
         // try the other decoder
@@ -1861,7 +1868,11 @@ export function App() {
               )}
               {error && <p className="error">{error}</p>}
               {message && <p className="ok">{t(lang, 'result')}: {message}</p>}
-              <DownloadList lang={lang} toolId={selected.id} items={downloads} />
+              {(selected.id === 'qr_scan' || selected.id === 'barcode_scan') && searchMeta.text ? (
+                <ScanTextResult lang={lang} text={String(searchMeta.text)} />
+              ) : (
+                <DownloadList lang={lang} toolId={selected.id} items={downloads} />
+              )}
             </form>
           )}
           {category !== 'help' && category !== 'safety' && category !== 'ai' && selected && selected.id === 'summarize' && (
@@ -2401,6 +2412,28 @@ async function downloadToolFile(url: string, name: string): Promise<'ok' | 'gone
   }
 }
 
+function ScanTextResult({ lang, text }: { lang: Lang; text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="result-card scan-text-result">
+      <h3>{t(lang, 'scanPayload')}</h3>
+      <pre className="result-body">{text}</pre>
+      <button
+        type="button"
+        className="btn-secondary"
+        onClick={() => {
+          void navigator.clipboard.writeText(text).then(() => {
+            setCopied(true)
+            window.setTimeout(() => setCopied(false), 2000)
+          })
+        }}
+      >
+        {copied ? t(lang, 'copied') : t(lang, 'copy')}
+      </button>
+    </div>
+  )
+}
+
 function DownloadList({
   items,
   lang,
@@ -2418,8 +2451,9 @@ function DownloadList({
       {items.length ? (
         <ul className="downloads">
           {items.map((item) => (
-            <li key={item.url}>
+            <li key={item.url} className="download-item">
               <a
+                className="download-name"
                 href={apiUrl(item.url)}
                 onClick={(event) => {
                   event.preventDefault()
@@ -2429,17 +2463,17 @@ function DownloadList({
                 }}
               >
                 {item.name}
-              </a>{' '}
+              </a>
               <button
                 type="button"
-                className="linkish"
+                className="btn-secondary download-save"
                 onClick={() => {
                   void saveOutputAndRemember(toolId, apiUrl(item.url), item.name).then((result) => {
-                    if (result.ok) setNote(`${t(lang, 'saveRememberOutput')}: ${result.name}`)
+                    if (result.ok) setNote(`${t(lang, 'saveRememberOutput')} ${result.name}`)
                     else if (result.reason === 'missing' || result.reason === 'download_failed') {
                       setNote(t(lang, 'downloadUnavailable'))
                     } else if (result.reason === 'no_path_memory') {
-                      setNote(t(lang, 'saveRememberOutput'))
+                      setNote(t(lang, 'saveRememberHint'))
                     } else {
                       setNote('')
                     }
@@ -2452,6 +2486,7 @@ function DownloadList({
           ))}
         </ul>
       ) : null}
+      {items.length ? <p className="field-hint download-save-hint">{t(lang, 'saveRememberHint')}</p> : null}
       {meta ? (
         <p className="field-hint">
           <button
