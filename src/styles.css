@@ -8,10 +8,11 @@
   --card: #ffffff;
   --sea: #0f766e;
   --sea-deep: #0d9488;
-  --agent: #0f766e;
-  --agent-glow: #0d9488;
-  --agent-panel: #f8fafc;
-  --agent-soft: #ffffff;
+  --agent: #0d9488;
+  --agent-glow: #2dd4bf;
+  --agent-panel: #ecfdf8;
+  --agent-soft: #fffdf8;
+  --agent-amber: #f59e0b;
   --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   --radius: 1.15rem;
   color: var(--ink);
@@ -1677,8 +1678,11 @@ button { cursor: pointer; }
 
 .assistant {
   border-radius: 0 1.2rem 1.2rem 0;
-  background: var(--agent-panel);
-  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at 88% 8%, rgba(245, 158, 11, 0.18), transparent 42%),
+    radial-gradient(circle at 12% 92%, rgba(45, 212, 191, 0.22), transparent 46%),
+    linear-gradient(165deg, #fffdf8 0%, var(--agent-panel) 48%, #e6faf5 100%);
+  border: 1px solid #99f6e4;
   color: var(--ink);
   padding: 0.75rem 0.8rem 0.85rem;
   min-height: 0;
@@ -1686,7 +1690,7 @@ button { cursor: pointer; }
   flex-direction: column;
   gap: 0.7rem;
   overflow: hidden;
-  box-shadow: var(--shadow);
+  box-shadow: 0 12px 28px rgba(13, 148, 136, 0.12);
 }
 
 .resize-handle {
@@ -2225,7 +2229,7 @@ button { cursor: pointer; }
   align-items: center;
   gap: 0.65rem;
   padding: 0.15rem 0.15rem 0.55rem;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 2px solid rgba(45, 212, 191, 0.45);
 }
 
 .assistant-title {
@@ -2244,10 +2248,12 @@ button { cursor: pointer; }
   border-radius: 0.9rem;
   display: grid;
   place-items: center;
-  background: linear-gradient(160deg, #ccfbf1 0%, #99f6e4 55%, #5eead4 100%);
+  background: linear-gradient(145deg, #fef3c7 0%, #99f6e4 48%, #5eead4 100%);
   color: #0f766e;
   flex: 0 0 auto;
-  box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.12);
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 118, 110, 0.16),
+    0 6px 14px rgba(45, 212, 191, 0.28);
 }
 
 .assistant-title-copy {
@@ -2268,7 +2274,7 @@ button { cursor: pointer; }
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--sea);
+  color: #b45309;
 }
 
 .assistant-head h2 {
@@ -2330,18 +2336,19 @@ button { cursor: pointer; }
 
 .bubble.user {
   align-self: flex-end;
-  background: var(--sea);
+  background: linear-gradient(145deg, #14b8a6 0%, #0d9488 55%, #0f766e 100%);
   color: #fff;
   border-bottom-right-radius: 0.35rem;
+  box-shadow: 0 6px 16px rgba(13, 148, 136, 0.28);
 }
 
 .bubble.assistant {
   align-self: flex-start;
-  background: #fff;
-  border: 1px solid var(--line);
+  background: linear-gradient(180deg, #ffffff 0%, #f0fdfa 100%);
+  border: 1px solid #99f6e4;
   color: var(--ink);
   border-bottom-left-radius: 0.35rem;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 6px 16px rgba(13, 148, 136, 0.1);
 }
 
 .assistant-form {
@@ -2351,10 +2358,10 @@ button { cursor: pointer; }
   flex-direction: column;
   gap: 0.45rem;
   padding: 0.7rem 0.75rem 0.75rem;
-  border: 1px solid var(--line);
+  border: 1.5px solid #5eead4;
   border-radius: 1.35rem;
-  background: #fff;
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  background: linear-gradient(180deg, #ffffff 0%, #fffbeb 100%);
+  box-shadow: 0 10px 24px rgba(13, 148, 136, 0.12);
 }
 
 .assistant-form textarea {
@@ -2415,12 +2422,12 @@ button { cursor: pointer; }
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 999px;
-  background: #f1f5f9;
-  color: #334155;
+  background: #ccfbf1;
+  color: #0f766e;
 }
 
 .assistant-icon-btn:hover {
-  background: #e2e8f0;
+  background: #99f6e4;
 }
 
 .assistant-icon-btn.listening {
