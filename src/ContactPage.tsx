@@ -23,15 +23,6 @@ const OFFICES = [
     email: true,
     whatsapp: '+1 715 5231188',
   },
-  {
-    id: 'india',
-    titleKey: 'officeIndia',
-    lines: [
-      'Karungal - 629157, Kanyakumari District, Tamil Nadu, India.',
-    ],
-    email: true,
-    whatsapp: '+91-9486067764',
-  },
 ] as const
 
 const TOPICS = ['new_tool', 'youtube', 'error', 'feedback', 'contact'] as const
