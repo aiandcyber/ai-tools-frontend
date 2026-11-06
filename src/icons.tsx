@@ -1,7 +1,7 @@
-export const CATEGORIES = ['search', 'pdf', 'image', 'media', 'utility', 'ai'] as const
+export const CATEGORIES = ['search', 'pdf', 'image', 'media', 'ai'] as const
 
 /** Top category tabs — Search/home is a separate Home control, not listed here. */
-export const NAV_CATEGORIES = ['media', 'safety', 'pdf', 'image', 'utility', 'help'] as const
+export const NAV_CATEGORIES = ['media', 'safety', 'pdf', 'image', 'help'] as const
 
 export type CategoryId = (typeof CATEGORIES)[number]
 /** Includes `ai` for the Home/search page even though Home is not in NAV_CATEGORIES. */
@@ -12,7 +12,6 @@ export const CATEGORY_META: Record<CategoryId | 'help' | 'safety', { accent: str
   pdf: { accent: '#0f766e', soft: '#ccfbf1' },
   image: { accent: '#c2410c', soft: '#ffedd5' },
   media: { accent: '#FF0000', soft: '#ffe4e4' },
-  utility: { accent: '#155e75', soft: '#e0f2fe' },
   ai: { accent: '#115e59', soft: '#a7f3d0' },
   help: { accent: '#b45309', soft: '#ffedd5' },
   safety: { accent: '#9f1239', soft: '#ffe4e6' },
@@ -54,14 +53,6 @@ export function CategoryIcon({ id }: { id: CategoryId | 'help' | 'safety' }) {
       </svg>
     )
   }
-  if (id === 'utility') {
-    return (
-      <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
-        <path {...common} d="M14.7 6.3a4 4 0 0 0-5.6 5.6L3 18v3h3l6.1-6.1" />
-        <path {...common} d="M16 4l4 4" />
-      </svg>
-    )
-  }
   if (id === 'safety') {
     return (
       <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
@@ -92,7 +83,7 @@ export function ToolGlyph({ category }: { category: string }) {
       ? category
       : CATEGORIES.includes(category as CategoryId)
         ? category
-        : 'utility'
+        : 'image'
   ) as CategoryId | 'help' | 'safety'
   return (
     <span className="tool-glyph" style={{ background: CATEGORY_META[id].soft, color: CATEGORY_META[id].accent }}>
