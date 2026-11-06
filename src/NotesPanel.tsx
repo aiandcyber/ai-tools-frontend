@@ -34,7 +34,11 @@ type Props = {
 }
 
 const NOTES_PIN_KEY = 'ai-forall-notes-pinned'
+const PEN_COLORS = ['#111827', '#dc2626', '#2563eb', '#16a34a', '#ca8a04'] as const
+const PEN_WIDTHS = [1.6, 2.4, 4.2, 7] as const
+const ERASER_RADIUS = 28
 
+type DrawTool = 'pen' | 'eraser'
 type FileHandle = FileSystemFileHandle
 
 /** App-owned note file: text + handwriting strokes. Not plain .txt (that cannot store drawing). */
@@ -150,6 +154,16 @@ function paintCanvas(canvas: HTMLCanvasElement, strokes: NoteStroke[]) {
   }
 }
 
+function strokeHitsPoint(stroke: NoteStroke, x: number, y: number, radius: number): boolean {
+  const r2 = radius * radius
+  for (const point of stroke.points) {
+    const dx = point.x - x
+    const dy = point.y - y
+    if (dx * dx + dy * dy <= r2) return true
+  }
+  return false
+}
+
 export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, onUseAsSearch }: Props) {
   const ensureAuth = useRequireAuth()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -174,12 +188,26 @@ export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, o
   /** Start open so Notes is ready; Pin is optional (keeps Notes open during search). */
   const [open, setOpen] = useState(true)
   const [fullscreen, setFullscreen] = useState(false)
+  const [drawTool, setDrawTool] = useState<DrawTool>('pen')
+  const [penColor, setPenColor] = useState<string>(PEN_COLORS[0])
+  const [penWidth, setPenWidth] = useState<number>(PEN_WIDTHS[1])
+  const [undoStack, setUndoStack] = useState<NoteStroke[][]>([])
+  const [redoStack, setRedoStack] = useState<NoteStroke[][]>([])
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     paintCanvas(canvas, strokes)
   }, [strokes, open, fullscreen])
+
+  function commitStrokes(next: NoteStroke[] | ((prev: NoteStroke[]) => NoteStroke[])) {
+    setStrokes((prev) => {
+      const value = typeof next === 'function' ? next(prev) : next
+      setUndoStack((stack) => [...stack.slice(-40), prev])
+      setRedoStack([])
+      return value
+    })
+  }
 
   useEffect(() => {
     if (!fullscreen) return
@@ -248,14 +276,29 @@ export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, o
   function onPointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
     event.currentTarget.setPointerCapture(event.pointerId)
     drawing.current = true
-    const stroke = { color: '#111827', width: 2.4, points: [pointFromEvent(event)] }
+    const point = pointFromEvent(event)
+    if (drawTool === 'eraser') {
+      commitStrokes((prev) => prev.filter((stroke) => !strokeHitsPoint(stroke, point.x, point.y, ERASER_RADIUS)))
+      current.current = null
+      return
+    }
+    const stroke = { color: penColor, width: penWidth, points: [point] }
     current.current = stroke
-    setStrokes((prev) => [...prev, stroke])
+    commitStrokes((prev) => [...prev, stroke])
   }
 
   function onPointerMove(event: ReactPointerEvent<HTMLCanvasElement>) {
-    if (!drawing.current || !current.current) return
-    current.current.points.push(pointFromEvent(event))
+    if (!drawing.current) return
+    const point = pointFromEvent(event)
+    if (drawTool === 'eraser') {
+      setStrokes((prev) => {
+        const next = prev.filter((stroke) => !strokeHitsPoint(stroke, point.x, point.y, ERASER_RADIUS))
+        return next.length === prev.length ? prev : next
+      })
+      return
+    }
+    if (!current.current) return
+    current.current.points.push(point)
     const snapshot = { ...current.current, points: [...current.current.points] }
     setStrokes((prev) => {
       if (!prev.length) return [snapshot]
@@ -268,11 +311,42 @@ export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, o
     current.current = null
   }
 
+  function undoStroke() {
+    setUndoStack((stack) => {
+      if (!stack.length) return stack
+      const previous = stack[stack.length - 1]
+      setStrokes((current) => {
+        setRedoStack((redo) => [...redo, current])
+        return previous
+      })
+      return stack.slice(0, -1)
+    })
+  }
+
+  function redoStroke() {
+    setRedoStack((stack) => {
+      if (!stack.length) return stack
+      const next = stack[stack.length - 1]
+      setStrokes((current) => {
+        setUndoStack((undo) => [...undo, current])
+        return next
+      })
+      return stack.slice(0, -1)
+    })
+  }
+
+  function clearPad() {
+    if (!strokes.length) return
+    commitStrokes([])
+  }
+
   function onNew() {
     fileHandleRef.current = null
     setFileLabel('')
     setText('')
     setStrokes([])
+    setUndoStack([])
+    setRedoStack([])
     setStatus(t(lang, 'noteNewReady'))
   }
 
@@ -354,6 +428,8 @@ export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, o
       setFileLabel(ensureNoteFileName(handle.name || file.name))
       setText(parsed.text)
       setStrokes(parsed.strokes)
+      setUndoStack([])
+      setRedoStack([])
       setStatus(t(lang, 'noteOpenedFile').replace('{name}', handle.name || file.name))
     } catch (exc) {
       if (exc instanceof DOMException && exc.name === 'AbortError') {
@@ -527,6 +603,104 @@ export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, o
 
   const panelOpen = pinned || open
 
+  const penToolbar = (
+    <div className="note-pen-toolbar" role="toolbar" aria-label={t(lang, 'notePen')}>
+      <button
+        type="button"
+        className={`note-pen-tool${drawTool === 'pen' ? ' on' : ''}`}
+        onClick={() => setDrawTool('pen')}
+        title={t(lang, 'notePen')}
+        aria-pressed={drawTool === 'pen'}
+      >
+        <MdIcon name="edit" />
+        <span>{t(lang, 'notePen')}</span>
+      </button>
+      <button
+        type="button"
+        className={`note-pen-tool${drawTool === 'eraser' ? ' on' : ''}`}
+        onClick={() => setDrawTool('eraser')}
+        title={t(lang, 'noteEraser')}
+        aria-pressed={drawTool === 'eraser'}
+      >
+        <MdIcon name="ink_eraser" />
+        <span>{t(lang, 'noteEraser')}</span>
+      </button>
+      <span className="note-pen-sep" aria-hidden="true" />
+      <div className="note-pen-colors" role="group" aria-label={t(lang, 'notePenColor')}>
+        {PEN_COLORS.map((color) => (
+          <button
+            key={color}
+            type="button"
+            className={`note-pen-swatch${penColor === color && drawTool === 'pen' ? ' on' : ''}`}
+            style={{ background: color }}
+            onClick={() => {
+              setPenColor(color)
+              setDrawTool('pen')
+            }}
+            title={color}
+            aria-label={color}
+            aria-pressed={penColor === color && drawTool === 'pen'}
+          />
+        ))}
+      </div>
+      <div className="note-pen-widths" role="group" aria-label={t(lang, 'notePenSize')}>
+        {PEN_WIDTHS.map((width) => (
+          <button
+            key={width}
+            type="button"
+            className={`note-pen-width${penWidth === width && drawTool === 'pen' ? ' on' : ''}`}
+            onClick={() => {
+              setPenWidth(width)
+              setDrawTool('pen')
+            }}
+            title={`${t(lang, 'notePenSize')} ${width}`}
+            aria-pressed={penWidth === width && drawTool === 'pen'}
+          >
+            <span className="note-pen-width-dot" style={{ width: `${width * 1.6}px`, height: `${width * 1.6}px` }} />
+          </button>
+        ))}
+      </div>
+      <span className="note-pen-sep" aria-hidden="true" />
+      <button type="button" className="note-pen-tool" onClick={undoStroke} disabled={!undoStack.length} title={t(lang, 'noteUndo')}>
+        <MdIcon name="undo" />
+        <span>{t(lang, 'noteUndo')}</span>
+      </button>
+      <button type="button" className="note-pen-tool" onClick={redoStroke} disabled={!redoStack.length} title={t(lang, 'noteRedo')}>
+        <MdIcon name="redo" />
+        <span>{t(lang, 'noteRedo')}</span>
+      </button>
+      <button type="button" className="note-pen-tool" onClick={clearPad} disabled={!strokes.length} title={t(lang, 'noteClearPad')}>
+        <MdIcon name="delete" />
+        <span>{t(lang, 'noteClearPad')}</span>
+      </button>
+      <button
+        type="button"
+        className="note-pen-tool"
+        onClick={() => void handwritingToText()}
+        disabled={busy || !strokes.length}
+        title={t(lang, 'noteHandwritingToText')}
+      >
+        <MdIcon name="gesture" />
+        <span>{t(lang, 'noteHandwritingToText')}</span>
+      </button>
+    </div>
+  )
+
+  const canvasBlock = (
+    <div className={`note-canvas-wrap${drawTool === 'eraser' ? ' is-eraser' : ''}`}>
+      <canvas
+        ref={canvasRef}
+        className="note-canvas"
+        width={960}
+        height={440}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
+      />
+    </div>
+  )
+
   return (
     <section
       className={`note-card${panelOpen ? ' is-open' : ' is-collapsed'}${pinned ? ' is-pinned' : ''}${fullscreen ? ' is-fullscreen' : ''}`}
@@ -571,68 +745,70 @@ export function NotesPanel({ lang, accent, collapseToken = 0, expandToken = 0, o
             <span>{t(lang, 'notesFullscreen')}</span>
           </button>
         ) : null}
-        <button
-          type="button"
-          className={`note-pin-btn${pinned ? ' active' : ''}`}
-          onClick={() => setPinnedPersist(!pinned)}
-          aria-pressed={pinned}
-          title={pinned ? t(lang, 'notesUnpin') : t(lang, 'notesPin')}
-        >
-          <MdIcon name="push_pin" />
-          <span>{pinned ? t(lang, 'notesUnpin') : t(lang, 'notesPin')}</span>
-        </button>
+        {!fullscreen ? (
+          <button
+            type="button"
+            className={`note-pin-btn${pinned ? ' active' : ''}`}
+            onClick={() => setPinnedPersist(!pinned)}
+            aria-pressed={pinned}
+            title={pinned ? t(lang, 'notesUnpin') : t(lang, 'notesPin')}
+          >
+            <MdIcon name="push_pin" />
+            <span>{pinned ? t(lang, 'notesUnpin') : t(lang, 'notesPin')}</span>
+          </button>
+        ) : null}
       </div>
       {panelOpen ? (
         <div id="notes-panel-body" className="note-card-body" ref={bodyRef}>
-          {!fullscreen ? <p>{t(lang, 'notesDesc')}</p> : null}
-          {fileHint}
-          <div className="note-toolbar">
-            <NoteButton icon="note_add" label={t(lang, 'noteNew')} onClick={onNew} disabled={busy} />
-            <NoteButton icon="folder_open" label={t(lang, 'noteOpen')} onClick={() => void onOpen()} disabled={busy} />
-            <NoteButton icon="save" label={t(lang, 'noteSave')} onClick={() => void onSave()} disabled={busy} />
-            <NoteButton icon="gesture" label={t(lang, 'noteHandwritingToText')} onClick={() => void handwritingToText()} disabled={busy} />
-            <NoteButton icon="search" label={t(lang, 'noteUseAsSearch')} onClick={useAsSearch} disabled={busy} />
-            {!recording ? (
-              <NoteButton
-                icon="mic"
-                label={t(lang, 'voice')}
-                onClick={startRec}
-                disabled={busy}
-                primary
-                accent={accent}
-              />
-            ) : (
-              <NoteButton
-                icon="stop"
-                label={t(lang, 'stop')}
-                onClick={stopRec}
-                listening
-              />
-            )}
-          </div>
-          {status ? <p className="field-hint note-status" style={{ color: accent }} role="status">{status}</p> : null}
-          <div className="note-write-area">
-            <div className="note-canvas-wrap">
-              <canvas
-                ref={canvasRef}
-                className="note-canvas"
-                width={960}
-                height={440}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerLeave={onPointerUp}
-              />
-            </div>
-            <textarea
-              className="note-text"
-              rows={11}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder={t(lang, 'noteTextPlaceholder')}
-            />
-          </div>
-          {!fullscreen ? <p className="field-hint">{t(lang, 'noteKeepOpenHint')}</p> : null}
+          {fullscreen ? (
+            <>
+              {penToolbar}
+              {status ? <p className="field-hint note-status" style={{ color: accent }} role="status">{status}</p> : null}
+              <div className="note-handwrite-stage">{canvasBlock}</div>
+            </>
+          ) : (
+            <>
+              <p>{t(lang, 'notesDesc')}</p>
+              {fileHint}
+              <div className="note-toolbar">
+                <NoteButton icon="note_add" label={t(lang, 'noteNew')} onClick={onNew} disabled={busy} />
+                <NoteButton icon="folder_open" label={t(lang, 'noteOpen')} onClick={() => void onOpen()} disabled={busy} />
+                <NoteButton icon="save" label={t(lang, 'noteSave')} onClick={() => void onSave()} disabled={busy} />
+                <NoteButton icon="gesture" label={t(lang, 'noteHandwritingToText')} onClick={() => void handwritingToText()} disabled={busy} />
+                <NoteButton icon="search" label={t(lang, 'noteUseAsSearch')} onClick={useAsSearch} disabled={busy} />
+                {!recording ? (
+                  <NoteButton
+                    icon="mic"
+                    label={t(lang, 'voice')}
+                    onClick={startRec}
+                    disabled={busy}
+                    primary
+                    accent={accent}
+                  />
+                ) : (
+                  <NoteButton
+                    icon="stop"
+                    label={t(lang, 'stop')}
+                    onClick={stopRec}
+                    listening
+                  />
+                )}
+              </div>
+              {penToolbar}
+              {status ? <p className="field-hint note-status" style={{ color: accent }} role="status">{status}</p> : null}
+              <div className="note-write-area">
+                {canvasBlock}
+                <textarea
+                  className="note-text"
+                  rows={11}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder={t(lang, 'noteTextPlaceholder')}
+                />
+              </div>
+              <p className="field-hint">{t(lang, 'noteKeepOpenHint')}</p>
+            </>
+          )}
         </div>
       ) : null}
     </section>
