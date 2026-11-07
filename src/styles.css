@@ -392,9 +392,9 @@ button { cursor: pointer; }
   color: var(--md-sys-color-primary);
   max-width: min(920px, 100%);
   line-height: 1.25;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  text-wrap: balance;
 }
 
 .google-box {
@@ -746,10 +746,10 @@ button { cursor: pointer; }
 
 .search-mode-cluster {
   display: inline-flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
-  white-space: nowrap;
+  white-space: normal;
   color: #0f766e;
   font-weight: 650;
 }
@@ -761,16 +761,34 @@ button { cursor: pointer; }
 
 .search-region-cluster {
   display: inline-flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.28rem;
-  white-space: nowrap;
+  white-space: normal;
   max-width: 100%;
   margin-left: 1.1rem;
   padding-left: 1rem;
   border-left: 1px solid #d5dde5;
   color: #64748b;
   font-weight: 500;
+}
+
+@media (max-width: 720px) {
+  .search-region-cluster {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
+    width: 100%;
+    justify-content: center;
+  }
+  .search-mode-cluster {
+    width: 100%;
+    justify-content: center;
+  }
+  .search-subtitle.search-hero {
+    font-size: 1.15rem;
+    padding: 0 0.35rem;
+  }
 }
 
 .search-region-cluster .search-kind {
@@ -2587,12 +2605,13 @@ button { cursor: pointer; }
     overflow: visible;
   }
   .topbar {
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 0.45rem;
     padding: 0.4rem 0.55rem;
   }
   .top-nav {
     gap: 0.3rem;
+    flex-wrap: wrap;
   }
   .top-actions {
     gap: 0.35rem;
@@ -2603,8 +2622,10 @@ button { cursor: pointer; }
   .category-label {
     font-size: 0.8rem;
   }
+  /* Home (.ai-home) must stack too — otherwise panel collapses to ~0 beside a fixed agent column. */
   .workspace,
-  .workspace.need-tool {
+  .workspace.need-tool,
+  .workspace.ai-home {
     grid-template-columns: 1fr;
     height: auto;
     overflow: visible;
@@ -2616,6 +2637,12 @@ button { cursor: pointer; }
     border-radius: 1.15rem;
     margin-bottom: 0;
     border: 1px solid var(--line);
+  }
+  .workspace.ai-home .panel.ai-home-panel {
+    border-radius: 1.15rem;
+    border: 1px solid var(--line);
+    padding: 1rem 0.85rem 1.1rem;
+    min-width: 0;
   }
   .assistant {
     height: min(70vh, 38rem);
