@@ -333,7 +333,7 @@ button { cursor: pointer; }
 }
 
 .category-label {
-  font-weight: 500;
+  font-weight: 700;
   font-size: 0.88rem;
   line-height: 1.2;
   text-align: left;
@@ -387,8 +387,9 @@ button { cursor: pointer; }
 
 .search-subtitle.search-hero {
   font-family: "Roboto Flex", Roboto, sans-serif;
-  font-size: clamp(1.05rem, 1.8vw, 1.55rem);
-  color: #134e4a;
+  font-size: clamp(1.25rem, 2vw, 1.5rem);
+  font-weight: 700;
+  color: var(--md-sys-color-primary);
   max-width: min(920px, 100%);
   line-height: 1.25;
   white-space: nowrap;
@@ -1512,7 +1513,8 @@ button { cursor: pointer; }
   gap: 0.6rem;
 }
 .need-tool-form .tool-hero h2 {
-  font-size: 1.35rem;
+  font-size: clamp(1.25rem, 2vw, 1.5rem);
+  font-weight: 700;
   margin-bottom: 0.15rem;
 }
 .need-tool-form .tool-hero p {
@@ -1764,7 +1766,13 @@ button { cursor: pointer; }
   border-bottom: 2px solid var(--sea);
 }
 
-.catalog-head strong { display: block; font-size: 1.15rem; white-space: normal; line-height: 1.25; }
+.catalog-head strong {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 700;
+  white-space: normal;
+  line-height: 1.25;
+}
 .catalog-head span { color: var(--muted); font-size: 0.92rem; }
 
 .tool-glyph {
@@ -1866,19 +1874,22 @@ button { cursor: pointer; }
   align-items: flex-start;
   gap: 0.95rem;
   padding: 1.05rem 1.1rem;
-  border-radius: 1.15rem;
+  border-radius: var(--md-sys-shape-corner-large);
   margin-bottom: 1rem;
-  border: 1px solid var(--line);
-  background: linear-gradient(135deg, #f0fdfa, #ffffff 58%);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container-low);
 }
 
 .tool-hero h2 {
   margin: 0 0 0.35rem;
   font-family: "Roboto Flex", Roboto, sans-serif;
-  font-size: 1.7rem;
+  font-size: clamp(1.25rem, 2vw, 1.5rem);
+  font-weight: 700;
+  color: var(--md-sys-color-on-surface);
+  letter-spacing: 0;
 }
 
-.tool-hero p { margin: 0; color: var(--muted); font-size: 1.02rem; }
+.tool-hero p { margin: 0; color: var(--muted); font-size: 0.95rem; font-weight: 400; }
 
 .field-stack {
   display: flex;
@@ -2627,7 +2638,7 @@ button { cursor: pointer; }
 @media (max-width: 640px) {
   :root { font-size: 16.5px; }
   .panel { padding: 0.95rem; }
-  .tool-hero h2 { font-size: 1.4rem; }
+  .tool-hero h2 { font-size: clamp(1.2rem, 3.5vw, 1.4rem); }
   .gt-langs {
     grid-template-columns: 1fr;
     justify-items: stretch;

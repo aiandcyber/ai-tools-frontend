@@ -1578,10 +1578,12 @@ export function App() {
                     ] as const).map(([value, label]) => (
                       <label key={value} className="search-kind">
                         <input
-                          type="checkbox"
+                          type="radio"
+                          name="searchKind"
+                          value={value}
                           checked={searchKind === value}
                           onChange={() => {
-                            setSearchKind((current) => (current === value ? '' : value))
+                            setSearchKind(value)
                             if (value !== 'product') setSearchBarcode('')
                           }}
                         />
