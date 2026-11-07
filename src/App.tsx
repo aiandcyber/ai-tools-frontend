@@ -30,6 +30,11 @@ import { ScanPage, safetyTools } from './ScanPage'
 import { apiUrl } from './config'
 import { useRequireAuth } from './useRequireAuth'
 import { CATEGORY_META, CategoryIcon, NAV_CATEGORIES, ToolGlyph, type NavCategoryId } from './icons'
+import {
+  NAV_POPUP_BLURBS,
+  NAV_POPUP_GROUPS,
+  isPopupNavCategory,
+} from './navPopup'
 import { LANGS, languageOptionLabel, speechLang, t, type Lang } from './i18n'
 import { SearchCapture, hitFromCode, type CaptureHit } from './SearchCapture'
 import { FileUpload } from './FileUpload'
@@ -350,8 +355,9 @@ export function App() {
         : 'ai'
   ))
   const [showPrivacy, setShowPrivacy] = useState(() => window.location.pathname === '/privacy')
-  const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Tool | null>(null)
+  const [navPopupOpen, setNavPopupOpen] = useState(false)
+  const topbarRef = useRef<HTMLElement | null>(null)
   const [message, setMessage] = useState('')
   const [downloads, setDownloads] = useState<Download[]>([])
   const [searchHits, setSearchHits] = useState<SearchHit[]>([])
@@ -366,7 +372,6 @@ export function App() {
   const [speaking, setSpeaking] = useState(false)
   const [listeningFor, setListeningFor] = useState<null | 'assistant' | 'search'>(null)
   const [loadError, setLoadError] = useState('')
-  const [openInfoId, setOpenInfoId] = useState<string | null>(null)
   const [regionMode, setRegionMode] = useState<'auto' | 'manual'>('auto')
   const [regionCustom, setRegionCustom] = useState('')
   const [searchKind, setSearchKind] = useState('')
@@ -558,31 +563,49 @@ export function App() {
     return () => controller.abort()
   }, [])
 
-  const catalogSafetyTools = useMemo(
-    () => tools.filter((tool) => tool.category === 'safety'),
-    [tools],
-  )
+  const popupToolsById = useMemo(() => {
+    const map = new Map<string, Tool>()
+    for (const tool of tools) map.set(tool.id, tool)
+    for (const tool of scanTools) map.set(tool.id, tool)
+    return map
+  }, [tools, scanTools])
 
-  const visible = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    const safetyList = [...scanTools, ...catalogSafetyTools]
-    const all = [...tools.filter((tool) => tool.category !== 'safety'), ...safetyList]
-    // Site-wide tool search (title, description, id, category).
-    if (needle) {
-      return all.filter((tool) => (
-        tool.title.toLowerCase().includes(needle)
-        || tool.description.toLowerCase().includes(needle)
-        || tool.id.toLowerCase().includes(needle)
-        || tool.category.toLowerCase().includes(needle)
-      ))
+  const navPopupColumns = useMemo(() => {
+    if (!isPopupNavCategory(category) || !navPopupOpen) return []
+    return NAV_POPUP_GROUPS[category]
+      .map((group) => ({
+        label: group.label,
+        items: group.ids
+          .map((id) => popupToolsById.get(id))
+          .filter((tool): tool is Tool => Boolean(tool)),
+      }))
+      .filter((group) => group.items.length > 0)
+  }, [category, navPopupOpen, popupToolsById])
+
+  useEffect(() => {
+    const el = topbarRef.current
+    if (!el) return
+    const apply = () => {
+      document.documentElement.style.setProperty('--topbar-h', `${el.offsetHeight}px`)
     }
-    if (category === 'safety') return safetyList
-    // AI home: AI tools only (web search is the main panel default, not listed again).
-    if (category === 'ai') {
-      return tools.filter((tool) => tool.category === 'ai')
+    apply()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(apply) : null
+    ro?.observe(el)
+    window.addEventListener('resize', apply)
+    return () => {
+      ro?.disconnect()
+      window.removeEventListener('resize', apply)
     }
-    return tools.filter((tool) => tool.category === category)
-  }, [tools, scanTools, catalogSafetyTools, category, query])
+  }, [])
+
+  useEffect(() => {
+    if (!navPopupOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setNavPopupOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [navPopupOpen])
 
   function categoryLabel(id: NavCategoryId | string): string {
     return t(lang, id)
@@ -624,8 +647,8 @@ export function App() {
     clearSearchImage()
     setCaptureTab(null)
     setDownloads([])
-    setOpenInfoId(null)
     if (id === 'help') {
+      setNavPopupOpen(false)
       window.history.pushState({}, '', '/contact')
       setContactPrefill({ url: '', topic: 'new_tool' })
       setShowPrivacy(false)
@@ -636,6 +659,7 @@ export function App() {
       window.history.pushState({}, '', '/safety')
       setShowPrivacy(false)
       setSelected(scanTools[0] ?? null)
+      setNavPopupOpen(true)
       return
     }
     setShowPrivacy(false)
@@ -647,11 +671,50 @@ export function App() {
       window.history.pushState({}, '', '/')
     }
     if (id === 'ai') {
+      setNavPopupOpen(false)
       setSelected(tools.find((tool) => tool.id === 'web_search') ?? tools.find((tool) => tool.category === 'ai') ?? null)
       return
     }
     const first = tools.find((tool) => tool.category === id) ?? null
     setSelected(first)
+    if (isPopupNavCategory(id)) setNavPopupOpen(true)
+    else setNavPopupOpen(false)
+  }
+
+  function onCategoryNavClick(id: NavCategoryId) {
+    if (isPopupNavCategory(id) && category === id && navPopupOpen) {
+      setNavPopupOpen(false)
+      return
+    }
+    pickCategory(id)
+  }
+
+  function pickToolFromPopup(tool: Tool) {
+    setSelected(tool)
+    setMessage('')
+    setError('')
+    setSearchHits([])
+    setSearchMeta({})
+    setDownloads([])
+    setToolScanFile(null)
+    setCodeCaptureFor(null)
+    setNavPopupOpen(false)
+    if (tool.category === 'search') {
+      setCategory('ai')
+      return
+    }
+    if ((NAV_CATEGORIES as readonly string[]).includes(tool.category) || tool.category === 'safety') {
+      setCategory(tool.category as NavCategoryId)
+      if (tool.category === 'safety') window.history.pushState({}, '', '/safety')
+      else if (
+        window.location.pathname === '/safety'
+        || window.location.pathname === '/contact'
+        || window.location.pathname === '/privacy'
+      ) {
+        window.history.pushState({}, '', '/')
+      }
+      setShowPrivacy(false)
+    }
   }
 
   function startProgressHints() {
@@ -1257,7 +1320,7 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
+      <header className="topbar" ref={topbarRef}>
         <nav className="top-nav" role="tablist" aria-label="Tool categories">
           <button
             type="button"
@@ -1268,7 +1331,7 @@ export function App() {
               ['--accent' as string]: CATEGORY_META.ai.accent,
               ['--soft' as string]: CATEGORY_META.ai.soft,
             }}
-            onClick={() => pickCategory('ai')}
+            onClick={() => onCategoryNavClick('ai')}
           >
             <span className="category-icon">
               <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
@@ -1282,18 +1345,20 @@ export function App() {
             const meta = CATEGORY_META[id]
             const active = id === category
             const label = categoryLabel(id)
+            const popupCat = isPopupNavCategory(id)
             return (
               <button
                 key={id}
                 type="button"
                 role="tab"
                 aria-selected={active}
+                aria-expanded={popupCat ? navPopupOpen && category === id : undefined}
                 className={`category-card${active ? ' on' : ''}`}
                 style={{
                   ['--accent' as string]: meta.accent,
                   ['--soft' as string]: meta.soft,
                 }}
-                onClick={() => pickCategory(id)}
+                onClick={() => onCategoryNavClick(id)}
               >
                 <span className={`category-icon${id === 'media' ? ' youtube' : ''}`}>
                   <CategoryIcon id={id} />
@@ -1348,79 +1413,46 @@ export function App() {
         </div>
       </header>
 
-      <div className={`workspace${category === 'help' ? ' need-tool' : ''}${category === 'ai' ? ' ai-home' : ''}`} style={{ ['--assistant-width' as string]: `${assistantWidth}px` }}>
-        {category !== 'help' && category !== 'ai' && (
-        <aside className="catalog">
-          <div className="catalog-head" style={{ borderColor: accent.accent }}>
-            <ToolGlyph category={category} />
-            <div>
-              <strong>{categoryLabel(category)}</strong>
-              <span>{visible.length} tools</span>
-            </div>
-          </div>
-          <input className="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t(lang, 'search')} />
-          <ul>
-            {visible.map((tool) => (
-              <li key={tool.id}>
-                <div className={`catalog-item${selected?.id === tool.id ? ' on' : ''}`}>
+      {navPopupOpen && isPopupNavCategory(category) ? (
+        <div
+          className="tool-pop"
+          role="menu"
+          aria-label={categoryLabel(category)}
+          style={{
+            ['--accent' as string]: accent.accent,
+            ['--soft' as string]: accent.soft,
+            ['--cols' as string]: String(Math.max(1, navPopupColumns.length)),
+            ['--assistant-width' as string]: `${assistantWidth}px`,
+          }}
+        >
+          {loadError ? <p className="error">{loadError}</p> : null}
+          <div className="tool-pop-cols">
+            {navPopupColumns.map((group) => (
+              <div className="tool-pop-col" key={group.label}>
+                {navPopupColumns.length > 1 ? <p className="tool-pop-col-label">{group.label}</p> : null}
+                {group.items.map((tool) => (
                   <button
+                    key={tool.id}
                     type="button"
-                    className="catalog-pick"
-                    title={tool.description}
-                    onClick={() => {
-                      setSelected(tool)
-                      if (tool.category === 'search') setCategory('ai')
-                      else if ((NAV_CATEGORIES as readonly string[]).includes(tool.category)) {
-                        setCategory(tool.category as NavCategoryId)
-                        if (tool.category === 'safety') window.history.pushState({}, '', '/safety')
-                        else if (
-                          window.location.pathname === '/safety'
-                          || window.location.pathname === '/contact'
-                          || window.location.pathname === '/privacy'
-                        ) {
-                          window.history.pushState({}, '', '/')
-                        }
-                        setShowPrivacy(false)
-                      }
-                      setMessage('')
-                      setError('')
-                      setSearchHits([])
-                      setSearchMeta({})
-                      setDownloads([])
-                      setOpenInfoId(null)
-                      setToolScanFile(null)
-                      setCodeCaptureFor(null)
-                    }}
+                    role="menuitem"
+                    className="tool-pop-row"
+                    onClick={() => pickToolFromPopup(tool)}
                   >
                     <strong>{tool.title}</strong>
+                    <small>{NAV_POPUP_BLURBS[tool.id] || tool.description}</small>
                   </button>
-                  <button
-                    type="button"
-                    className={`catalog-info${openInfoId === tool.id ? ' open' : ''}`}
-                    aria-label={`About ${tool.title}`}
-                    aria-expanded={openInfoId === tool.id}
-                    title={tool.description}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      setOpenInfoId((current) => (current === tool.id ? null : tool.id))
-                    }}
-                  >
-                    i
-                  </button>
-                  {openInfoId === tool.id ? (
-                    <div className="catalog-tip" role="status">
-                      {tool.description}
-                    </div>
-                  ) : null}
-                </div>
-              </li>
+                ))}
+              </div>
             ))}
-          </ul>
-          {loadError && <p className="error">{loadError}</p>}
-        </aside>
-        )}
+          </div>
+        </div>
+      ) : null}
 
-        <main className={`panel${category === 'help' ? ' need-tool' : ''}${category === 'ai' ? ' ai-home-panel' : ''}`}>
+      <div className={`workspace${category === 'help' ? ' need-tool' : ''}${category === 'ai' ? ' ai-home' : ''}`} style={{ ['--assistant-width' as string]: `${assistantWidth}px` }}>
+        <main
+          className={`panel${category === 'help' ? ' need-tool' : ''}${category === 'ai' ? ' ai-home-panel' : ''}`}
+          onClick={() => { if (navPopupOpen) setNavPopupOpen(false) }}
+        >
           {category === 'safety' && selected?.id === 'image_privacy_check' && (
             <ScanPage
               key="image_privacy_check"

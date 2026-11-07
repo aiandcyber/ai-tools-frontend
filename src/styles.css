@@ -1,10 +1,10 @@
 /* Material Design 3 tokens — visual only; layout structure unchanged. */
 :root {
-  /* MD3 system colors (teal primary, aligned with existing brand) */
-  --md-sys-color-primary: #006a60;
+  /* MD3 roles kept; hexes match production brand (MD3 does not require Theme Builder P40). */
+  --md-sys-color-primary: #0f766e;
   --md-sys-color-on-primary: #ffffff;
-  --md-sys-color-primary-container: #9ff2e4;
-  --md-sys-color-on-primary-container: #00201c;
+  --md-sys-color-primary-container: #ccfbf1;
+  --md-sys-color-on-primary-container: #134e4a;
   --md-sys-color-secondary: #4a635f;
   --md-sys-color-on-secondary: #ffffff;
   --md-sys-color-secondary-container: #cce8e2;
@@ -47,7 +47,7 @@
   --paper: var(--md-sys-color-surface);
   --card: var(--md-sys-color-surface-container-lowest);
   --sea: var(--md-sys-color-primary);
-  --sea-deep: #008378;
+  --sea-deep: #0d9488;
   --agent: var(--md-sys-color-primary);
   --agent-glow: #2dd4bf;
   --agent-panel: #ecfdf8;
@@ -87,6 +87,7 @@ button { cursor: pointer; }
 }
 
 .app {
+  position: relative;
   height: 100vh;
   height: 100dvh;
   max-height: 100dvh;
@@ -389,7 +390,7 @@ button { cursor: pointer; }
   font-family: "Roboto Flex", Roboto, sans-serif;
   font-size: clamp(1.25rem, 2vw, 1.5rem);
   font-weight: 700;
-  color: var(--md-sys-color-primary);
+  color: #134e4a;
   max-width: min(920px, 100%);
   line-height: 1.25;
   white-space: normal;
@@ -1706,7 +1707,8 @@ button { cursor: pointer; }
 .workspace {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 10px var(--assistant-width, 420px);
+  /* Left catalog removed — popup nav; same main+agent split as Home. */
+  grid-template-columns: minmax(0, 1fr) 10px var(--assistant-width, 420px);
   min-height: 0;
   height: 100%;
   overflow: hidden;
@@ -1742,11 +1744,88 @@ button { cursor: pointer; }
 }
 
 .panel {
-  border-left: 0;
+  border-left: 1px solid var(--md-sys-color-outline-variant);
   border-right: 0;
-  border-radius: 0;
+  border-radius: var(--md-sys-shape-corner-large) 0 0 var(--md-sys-shape-corner-large);
   padding: 1.2rem 1.4rem;
   overflow: auto;
+}
+
+/* V1d floating tool popup (nav only) */
+.tool-pop {
+  position: absolute;
+  top: calc(var(--topbar-h, 3.5rem) + 0.35rem);
+  left: 0.75rem;
+  right: calc(var(--assistant-width, 420px) + 1.6rem);
+  z-index: 30;
+  background: var(--md-sys-color-surface-container-lowest);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 20px;
+  box-shadow:
+    0 12px 32px rgba(23, 29, 27, 0.14),
+    0 2px 6px rgba(23, 29, 27, 0.06);
+  max-height: min(56vh, 420px);
+  overflow: auto;
+  padding: 0.85rem 1rem 1rem;
+}
+.tool-pop-cols {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
+  gap: 0.35rem 1.35rem;
+  align-items: start;
+}
+.tool-pop-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.tool-pop-col-label {
+  margin: 0 0 0.35rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.tool-pop-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  padding: 0.5rem 0.55rem;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.tool-pop-row:hover,
+.tool-pop-row:focus-visible {
+  background: var(--soft, #f0fdfa);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent, #0f766e) 45%, #99f6e4);
+  outline: none;
+}
+.tool-pop-row:hover strong,
+.tool-pop-row:focus-visible strong {
+  color: var(--accent, #0f766e);
+}
+.tool-pop-row strong {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.tool-pop-row small {
+  display: block;
+  margin-top: 0.18rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--md-sys-color-on-surface-variant);
+  font-weight: 400;
+}
+.category-card[aria-expanded="true"] {
+  outline: 2px solid color-mix(in srgb, var(--accent, var(--md-sys-color-primary)) 45%, transparent);
 }
 
 .assistant {
@@ -1824,12 +1903,12 @@ button { cursor: pointer; }
 
 .catalog-item.on,
 .catalog-item:hover {
-  background: var(--md-sys-color-secondary-container);
-  border-color: transparent;
+  background: #f0fdfa;
+  border-color: #99f6e4;
 }
 
 .catalog-item.on {
-  color: var(--md-sys-color-on-secondary-container);
+  color: var(--md-sys-color-on-surface);
 }
 
 .catalog-pick {
@@ -2649,6 +2728,13 @@ button { cursor: pointer; }
     max-height: 70vh;
   }
   .resize-handle { display: none; }
+  .tool-pop {
+    left: 0.5rem;
+    right: 0.5rem;
+  }
+  .tool-pop-cols {
+    grid-template-columns: 1fr !important;
+  }
   .gt-panels { grid-template-columns: 1fr; }
   .gt-langs { grid-template-columns: 1fr auto 1fr; }
   .format-picker { grid-template-columns: 1fr; }
